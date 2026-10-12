@@ -9,7 +9,7 @@
 :root{
   --bg:#12161b; --panel:#1b2026; --panel-2:#242b33; --border:#333c47;
   --text:#e9edf1; --text-dim:#97a3b0; --accent:#f0a83c; --accent-ink:#1a1206;
-  --naklad:#3fae9c; --razklad:#e08a3c; --drugo:#6b7684; --danger:#e2574a; --ok:#49b780;
+  --naklad:#3fae9c; --razklad:#e08a3c; --drugo:#6b7684; --opravilo:#5b8def; --servis:#c2548a; --danger:#e2574a; --ok:#49b780;
   --radius:10px;
   font-size:16px;
 }
@@ -70,13 +70,16 @@ main{flex:1;padding:18px;max-width:1100px;width:100%;margin:0 auto;}
 .cal-day .num{font-weight:700;margin-bottom:4px;}
 .chip{display:block;border-radius:5px;padding:2px 5px;margin-bottom:3px;font-size:11px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .chip.naklad{background:var(--naklad);} .chip.razklad{background:var(--razklad);} .chip.drugo{background:var(--drugo);}
+.chip.opravilo{background:var(--opravilo);} .chip.servis{background:var(--servis);}
 .chip-more{font-size:10px;color:var(--text-dim);}
+.urgent-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);box-shadow:0 0 0 3px rgba(226,87,74,.25);}
 
 /* ---------- operation cards ---------- */
 .op-card{border:1px solid var(--border);border-radius:9px;margin-bottom:10px;background:var(--panel-2);}
 .op-head{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;}
 .op-head .type-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;color:#fff;}
 .type-badge.naklad{background:var(--naklad);} .type-badge.razklad{background:var(--razklad);}
+.type-badge.opravilo{background:var(--opravilo);} .type-badge.servis{background:var(--servis);}
 .op-head .crane-name{font-weight:700;}
 .op-head .crane-code{color:var(--text-dim);font-size:12px;}
 .op-head .meta{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-dim);}
@@ -157,6 +160,8 @@ table.admin-table input,table.admin-table select{width:100%;padding:5px 7px;back
   <nav class="tabs" id="tabs">
     <button data-tab="calendar" class="active">Koledar</button>
     <button data-tab="ops">Naklad / Razklad</button>
+    <button data-tab="opravila">Opravila</button>
+    <button data-tab="servisi">Servisi</button>
     <button data-tab="alerts">Opozorila <span class="count hidden" id="alerts-count">0</span></button>
     <button data-tab="admin" id="tab-admin-btn" class="hidden">Uprava</button>
   </nav>
@@ -168,6 +173,8 @@ table.admin-table input,table.admin-table select{width:100%;padding:5px 7px;back
 
     <section id="view-calendar"></section>
     <section id="view-ops" class="hidden"></section>
+    <section id="view-opravila" class="hidden"></section>
+    <section id="view-servisi" class="hidden"></section>
     <section id="view-alerts" class="hidden"></section>
     <section id="view-admin" class="hidden"></section>
   </main>
@@ -186,7 +193,8 @@ const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 const DEMO_MODE = SUPABASE_URL === 'YOUR_SUPABASE_URL' || !SUPABASE_URL;
 
 const DOW = ['Pon','Tor','Sre','Čet','Pet','Sob','Ned'];
-const TYPE_LABEL = {naklad:'NAKLAD', razklad:'RAZKLAD', drugo:'DRUGO'};
+const TYPE_LABEL = {naklad:'NAKLAD', razklad:'RAZKLAD', opravilo:'OPRAVILO', servis:'SERVIS', drugo:'DRUGO'};
+const KIND_FILTERKEY = {ops:'opsFilter', opravila:'opravilaFilter', servisi:'servisiFilter'};
 
 function uid(){ return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function fmtDate(d){ d = new Date(d); return d.toLocaleDateString('sl-SI',{day:'2-digit',month:'2-digit',year:'numeric'}); }
@@ -218,19 +226,35 @@ function makeDemoStore(){
     {id:'u-viewer', email:'ekipa@stkadria.si', full_name:'Ekipa — skladišče', role:'viewer'},
   ];
   const d1 = new Date(now.getFullYear(), now.getMonth(), now.getDate()+2, 7, 0);
+  const d2 = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 9, 0);
+  const d3 = new Date(now.getFullYear(), now.getMonth(), now.getDate()+5, 8, 0);
+  const stale = new Date(now.getTime() - 4*24*3600*1000); // pred 4 dnevi, za prikaz "čaka > 3 dni"
   const calendar_events = [
-    {id:'e1', crane_id:'c1', type:'naklad', title:'Naklad Gašper', site_name:'Gradbišče Koper — Istrska', start_at:d1.toISOString(), end_at:null, notes:'', created_by:'u-admin'},
+    {id:'e1', crane_id:'c1', type:'naklad', title:'Naklad Gašper', site_name:'Gradbišče Koper — Istrska', start_at:d1.toISOString(), end_at:null, notes:'', urgent:false, created_by:'u-admin'},
+    {id:'e2', crane_id:'c3', type:'servis', title:'Servis hidravlike', site_name:'Gradbišče Celje', start_at:d2.toISOString(), end_at:null, notes:'Puščanje na vrtljivem delu', urgent:true, created_by:'u-admin'},
+    {id:'e3', crane_id:null, type:'opravilo', title:'Pospraviti skladišče — cona B', site_name:'', start_at:d3.toISOString(), end_at:null, notes:'', urgent:false, created_by:'u-admin'},
   ];
   const operations = [
-    {id:'o1', calendar_event_id:'e1', crane_id:'c1', type:'naklad', status:'odprto', closed_at:null, created_at:now.toISOString()},
+    {id:'o1', calendar_event_id:'e1', crane_id:'c1', type:'naklad', status:'odprto', stale_alerted:false, closed_at:null, created_at:now.toISOString()},
+    {id:'o2', calendar_event_id:'e2', crane_id:'c3', type:'servis', status:'odprto', stale_alerted:false, closed_at:null, created_at:stale.toISOString()},
+    {id:'o3', calendar_event_id:'e3', crane_id:null, type:'opravilo', status:'odprto', stale_alerted:false, closed_at:null, created_at:stale.toISOString()},
   ];
-  const operation_items = part_templates.map((pt,i)=>({
-    id:'oi'+i, operation_id:'o1', part_name:pt.part_name, qty:pt.qty, sort_order:pt.sort_order,
-    checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note:null
-  }));
+  const operation_items = [
+    ...part_templates.map((pt,i)=>({
+      id:'oi'+i, operation_id:'o1', part_name:pt.part_name, qty:pt.qty, sort_order:pt.sort_order,
+      checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note:null
+    })),
+    {id:'ti1', operation_id:'o2', part_name:'Preveriti hidravlično črpalko', qty:1, sort_order:1, checked:true, checked_by:'u-admin', checked_at:now.toISOString(), diverted:false, diverted_note:null, source_note:null},
+    {id:'ti2', operation_id:'o2', part_name:'Zamenjati tesnilo', qty:1, sort_order:2, checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note:null},
+    {id:'ti3', operation_id:'o3', part_name:'Zložiti palete', qty:1, sort_order:1, checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note:null},
+  ];
   const pending_notes = [];
   const alerts = [];
-  return {cranes, part_templates, profiles, calendar_events, operations, operation_items, pending_notes, alerts};
+  const crane_models = [
+    {id:'m1', name:'Terex CTT 91-5', pdf_url:'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-91-5.pdf', notes:''},
+    {id:'m2', name:'Terex CTT 152-6', pdf_url:'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-152-6.pdf', notes:''},
+  ];
+  return {cranes, part_templates, profiles, calendar_events, operations, operation_items, pending_notes, alerts, crane_models};
 }
 
 function buildDemoDb(){
@@ -284,16 +308,18 @@ function buildDemoDb(){
     },
     async createEvent(evt){
       evt.id = uid(); evt.created_by = currentUser.id; evt.created_at = new Date().toISOString();
+      evt.urgent = !!evt.urgent;
       store.calendar_events.push(evt);
-      if(evt.type==='naklad' || evt.type==='razklad'){
-        const op = {id:uid(), calendar_event_id:evt.id, crane_id:evt.crane_id, type:evt.type, status:'odprto', closed_at:null, created_at:new Date().toISOString()};
+      let op = null;
+      if(['naklad','razklad','opravilo','servis'].includes(evt.type)){
+        op = {id:uid(), calendar_event_id:evt.id, crane_id:evt.crane_id, type:evt.type, status:'odprto', stale_alerted:false, closed_at:null, created_at:new Date().toISOString()};
         store.operations.push(op);
         if(evt.type==='naklad'){
           store.part_templates.filter(pt=>pt.crane_id===evt.crane_id).forEach(pt=>{
             const pn = store.pending_notes.find(n=>n.crane_id===evt.crane_id && n.part_name===pt.part_name && !n.resolved);
             store.operation_items.push({id:uid(), operation_id:op.id, part_name:pt.part_name, qty:pt.qty, sort_order:pt.sort_order, checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note: pn ? pn.note : null});
           });
-        } else {
+        } else if(evt.type==='razklad'){
           const srcOps = store.operations.filter(o=>o.crane_id===evt.crane_id && o.type==='naklad')
             .map(o=>({o, ev: store.calendar_events.find(e=>e.id===o.calendar_event_id)}))
             .filter(x=>x.ev && x.ev.start_at <= evt.start_at)
@@ -306,10 +332,39 @@ function buildDemoDb(){
             });
           }
         }
+        // opravilo/servis: brez samodejnih postavk — admin jih doda sam (addTaskItem)
+      }
+      if(evt.urgent && op){
+        store.alerts.push({id:uid(), operation_id:op.id, operation_item_id:null, message:`🔴 Nujno — ${evt.type.toUpperCase()}: ${evt.title||'(brez naslova)'}`, created_at:new Date().toISOString(), resolved:false});
       }
       notify();
       return evt;
     },
+    async addTaskItem(operationId, taskName){
+      const items = store.operation_items.filter(i=>i.operation_id===operationId);
+      const nextOrder = items.length ? Math.max(...items.map(i=>i.sort_order))+1 : 1;
+      const item = {id:uid(), operation_id:operationId, part_name:taskName, qty:1, sort_order:nextOrder, checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note:null};
+      store.operation_items.push(item);
+      notify();
+      return item;
+    },
+    async deleteTaskItem(itemId){ store.operation_items = store.operation_items.filter(i=>i.id!==itemId); notify(); },
+    async getOperationByEventId(eventId){ return store.operations.find(o=>o.calendar_event_id===eventId) || null; },
+    async checkStaleOperations(){
+      const cutoff = Date.now() - 3*24*3600*1000;
+      store.operations.forEach(o=>{
+        if(['opravilo','servis'].includes(o.type) && o.status==='odprto' && !o.stale_alerted && new Date(o.created_at).getTime() < cutoff){
+          const hasUnchecked = store.operation_items.some(i=>i.operation_id===o.id && !i.checked);
+          if(hasUnchecked){
+            const ev = store.calendar_events.find(e=>e.id===o.calendar_event_id);
+            store.alerts.push({id:uid(), operation_id:o.id, operation_item_id:null, message:`⏰ Čaka že več kot 3 dni — ${o.type.toUpperCase()}: ${ev?.title||ev?.site_name||'(brez naslova)'}`, created_at:new Date().toISOString(), resolved:false});
+            o.stale_alerted = true;
+          }
+        }
+      });
+      notify();
+    },
+    async listCraneModels(){ return store.crane_models; },
     async deleteEvent(id){
       const op = store.operations.find(o=>o.calendar_event_id===id);
       if(op){ store.operation_items = store.operation_items.filter(i=>i.operation_id!==op.id); store.operations = store.operations.filter(o=>o.id!==op.id); }
@@ -390,6 +445,14 @@ function buildSupabaseDb(){
     },
     async createEvent(evt){ return check(await sb.from('calendar_events').insert(evt).select().single()); },
     async deleteEvent(id){ check(await sb.from('calendar_events').delete().eq('id',id)); },
+    async addTaskItem(operationId, taskName){ return check(await sb.rpc('add_task_item', {op_id:operationId, task_name:taskName})); },
+    async deleteTaskItem(itemId){ check(await sb.rpc('delete_task_item', {item_id:itemId})); },
+    async getOperationByEventId(eventId){
+      const rows = check(await sb.from('operations').select('*').eq('calendar_event_id', eventId));
+      return rows[0] || null;
+    },
+    async checkStaleOperations(){ check(await sb.rpc('check_stale_operations')); },
+    async listCraneModels(){ return check(await sb.from('crane_models').select('*').order('name')); },
     async listOperations(){
       const rows = check(await sb.from('operations').select('*, cranes(*), calendar_events(*), operation_items(*)'));
       return rows.map(r=>({...r, crane:r.cranes, event:r.calendar_events, items:(r.operation_items||[]).sort((a,b)=>a.sort_order-b.sort_order)}));
@@ -414,7 +477,12 @@ const db = DEMO_MODE ? buildDemoDb() : buildSupabaseDb();
 /* ============================================================
    STANJE + MODAL
 ============================================================ */
-const State = { session:null, profile:null, tab:'calendar', calMonth:new Date(), cranes:[], expandedOp:null, opsFilter:'odprto' };
+const State = {
+  session:null, profile:null, tab:'calendar', calMonth:new Date(), cranes:[],
+  expandedOp:null, opsFilter:'odprto',
+  expandedOpravilo:null, opravilaFilter:'odprto',
+  expandedServis:null, servisiFilter:'odprto',
+};
 
 function openModal(html){
   document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop" data-action="modal-backdrop"><div class="modal">${html}</div></div>`;
@@ -453,6 +521,7 @@ async function bootSession(){
   document.getElementById('tab-admin-btn').classList.toggle('hidden', State.profile.role!=='admin');
   document.getElementById('demo-banner').classList.toggle('hidden', !DEMO_MODE);
   State.cranes = await db.listCranes();
+  await db.checkStaleOperations();
   render();
 }
 function isAdmin(){ return State.profile && State.profile.role === 'admin'; }
@@ -481,7 +550,7 @@ async function renderCalendar(){
     const shown = dayEvents.slice(0,3);
     cells += `<div class="cal-day ${inMonth?'':'other-month'} ${isToday?'today':''}" data-action="day-click" data-date="${d.toISOString()}">
       <div class="num">${d.getDate()}</div>
-      ${shown.map(e=>`<span class="chip ${e.type}" data-action="event-click" data-id="${e.id}" title="${escapeHtml(e.crane?.name||'')} — ${escapeHtml(e.title||'')}">${TYPE_LABEL[e.type]} · ${escapeHtml(e.crane?.name||'?')}</span>`).join('')}
+      ${shown.map(e=>`<span class="chip ${e.type}" data-action="event-click" data-id="${e.id}" title="${escapeHtml(e.crane?.name||e.title||'')}">${TYPE_LABEL[e.type]}${e.crane ? ' · '+escapeHtml(e.crane.name) : (e.title ? ' · '+escapeHtml(e.title) : '')}${e.urgent?' 🔴':''}</span>`).join('')}
       ${dayEvents.length>3 ? `<div class="chip-more">+${dayEvents.length-3} več</div>`:''}
     </div>`;
   }
@@ -509,20 +578,30 @@ function openEventForm(prefillDate){
   dt.setHours(7,0,0,0);
   openModal(`
     <h3>Nov dogodek</h3>
-    <div class="field"><label>Žerjav</label>
-      <select id="f-crane">${State.cranes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)} — ${escapeHtml(c.code)}</option>`).join('')}</select>
-    </div>
     <div class="field"><label>Vrsta</label>
       <select id="f-type">
         <option value="naklad">Naklad</option>
         <option value="razklad">Razklad</option>
+        <option value="opravilo">Opravilo (skladišče ipd.)</option>
+        <option value="servis">Servis žerjava</option>
         <option value="drugo">Drugo</option>
+      </select>
+    </div>
+    <div class="field" id="f-crane-wrap"><label id="f-crane-label">Žerjav</label>
+      <select id="f-crane">
+        <option value="">— (splošno, brez žerjava)</option>
+        ${State.cranes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)} — ${escapeHtml(c.code)}</option>`).join('')}
       </select>
     </div>
     <div class="field"><label>Naslov</label><input id="f-title" placeholder="npr. Naklad za gradbišče Koper"></div>
     <div class="field"><label>Gradbišče / lokacija</label><input id="f-site"></div>
     <div class="field"><label>Začetek</label><input type="datetime-local" id="f-start" value="${toInputDateTime(dt)}"></div>
+    <div class="field hidden" id="f-tasks-wrap"><label>Naloge (ena na vrstico — lahko dodaš/odstraniš tudi kasneje)</label><textarea id="f-tasks" placeholder="npr.&#10;Preveri hidravliko&#10;Zamenjaj tesnilo"></textarea></div>
     <div class="field"><label>Opombe</label><textarea id="f-notes"></textarea></div>
+    <div class="field" style="display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" id="f-urgent" style="width:18px;height:18px;">
+      <label for="f-urgent" style="margin:0;">Nujno (takoj sproži opozorilo vsem)</label>
+    </div>
     <div class="err" id="f-err"></div>
     <div class="modal-actions">
       <button class="btn" data-action="modal-close">Prekliči</button>
@@ -531,33 +610,42 @@ function openEventForm(prefillDate){
   `);
 }
 async function saveEventForm(){
-  const crane_id = document.getElementById('f-crane').value;
+  const crane_id = document.getElementById('f-crane').value || null;
   const type = document.getElementById('f-type').value;
   const title = document.getElementById('f-title').value.trim();
   const site_name = document.getElementById('f-site').value.trim();
   const startLocal = document.getElementById('f-start').value;
   const notes = document.getElementById('f-notes').value.trim();
-  if(!crane_id || !startLocal){ document.getElementById('f-err').textContent='Izberi žerjav in čas.'; return; }
+  const urgent = document.getElementById('f-urgent').checked;
+  const taskLines = document.getElementById('f-tasks').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!startLocal){ document.getElementById('f-err').textContent='Izberi čas.'; return; }
+  if(!crane_id && type!=='opravilo'){ document.getElementById('f-err').textContent='Za to vrsto dogodka izberi žerjav.'; return; }
   try{
-    await db.createEvent({crane_id, type, title, site_name, start_at: new Date(startLocal).toISOString(), end_at:null, notes});
+    const evt = await db.createEvent({crane_id, type, title, site_name, start_at: new Date(startLocal).toISOString(), end_at:null, notes, urgent});
+    if((type==='opravilo' || type==='servis') && taskLines.length){
+      const op = await db.getOperationByEventId(evt.id);
+      if(op) for(const task of taskLines){ await db.addTaskItem(op.id, task); }
+    }
     closeModal();
     await renderCalendar();
-    await renderOps();
+    await renderOps(); await renderOpravila(); await renderServisi();
+    await refreshAlertBadge();
   }catch(e){ document.getElementById('f-err').textContent = e.message; }
 }
+const GOTO_TAB_BY_TYPE = {naklad:'ops', razklad:'ops', opravilo:'opravila', servis:'servisi'};
 function openEventDetail(id){
   const e = calendarEventsCache.find(x=>x.id===id);
   if(!e) return;
   openModal(`
-    <h3>${TYPE_LABEL[e.type]}</h3>
-    <div class="detail-line"><span class="k">Žerjav</span>${escapeHtml(e.crane?.name||'')} <span class="mono">(${escapeHtml(e.crane?.code||'')})</span></div>
+    <h3>${e.urgent?'🔴 ':''}${TYPE_LABEL[e.type]}</h3>
+    ${e.crane ? `<div class="detail-line"><span class="k">Žerjav</span>${escapeHtml(e.crane.name)} <span class="mono">(${escapeHtml(e.crane.code)})</span></div>` : ''}
     <div class="detail-line"><span class="k">Naslov</span>${escapeHtml(e.title||'—')}</div>
     <div class="detail-line"><span class="k">Lokacija</span>${escapeHtml(e.site_name||'—')}</div>
     <div class="detail-line"><span class="k">Začetek</span>${fmtDateTime(e.start_at)}</div>
     <div class="detail-line"><span class="k">Opombe</span>${escapeHtml(e.notes||'—')}</div>
     <div class="modal-actions">
       ${isAdmin() ? `<button class="btn btn-danger" data-action="delete-event" data-id="${e.id}">Izbriši</button>`:''}
-      ${(e.type==='naklad'||e.type==='razklad') ? `<button class="btn btn-primary" data-action="goto-ops">Odpri v Naklad/Razklad</button>`:''}
+      ${GOTO_TAB_BY_TYPE[e.type] ? `<button class="btn btn-primary" data-action="goto-ops" data-goto="${GOTO_TAB_BY_TYPE[e.type]}">Odpri</button>`:''}
       <button class="btn" data-action="modal-close">Zapri</button>
     </div>
   `);
@@ -582,38 +670,53 @@ async function saveDivertForm(itemId){
 }
 
 /* ============================================================
-   NAKLAD / RAZKLAD
+   NAKLAD / RAZKLAD / OPRAVILA / SERVISI (generična kartica operacije)
 ============================================================ */
-let opsCache = [];
-async function renderOps(){
-  const el = document.getElementById('view-ops');
-  opsCache = await db.listOperations();
-  const filtered = opsCache.filter(o => State.opsFilter==='vse' ? true : o.status===State.opsFilter);
+const KIND_CONFIG = {
+  ops:      {expandedKey:'expandedOp',       render: ()=>renderOps()},
+  opravila: {expandedKey:'expandedOpravilo', render: ()=>renderOpravila()},
+  servisi:  {expandedKey:'expandedServis',   render: ()=>renderServisi()},
+};
+async function renderOperationsList(containerId, types, kind, title){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const all = await db.listOperations();
+  const filterKey = KIND_FILTERKEY[kind];
+  const filtered = all.filter(o=>types.includes(o.type)).filter(o => State[filterKey]==='vse' ? true : o.status===State[filterKey]);
 
   el.innerHTML = `
     <div class="panel">
       <div class="row-between">
-        <h2 style="margin:0;">Naklad / Razklad</h2>
+        <h2 style="margin:0;">${title}</h2>
         <div class="subtabs">
-          <button class="${State.opsFilter==='odprto'?'active':''}" data-action="ops-filter" data-f="odprto">Odprto</button>
-          <button class="${State.opsFilter==='zaključeno'?'active':''}" data-action="ops-filter" data-f="zaključeno">Zaključeno</button>
-          <button class="${State.opsFilter==='vse'?'active':''}" data-action="ops-filter" data-f="vse">Vse</button>
+          <button class="${State[filterKey]==='odprto'?'active':''}" data-action="ops-filter" data-kind="${kind}" data-f="odprto">Odprto</button>
+          <button class="${State[filterKey]==='zaključeno'?'active':''}" data-action="ops-filter" data-kind="${kind}" data-f="zaključeno">Zaključeno</button>
+          <button class="${State[filterKey]==='vse'?'active':''}" data-action="ops-filter" data-kind="${kind}" data-f="vse">Vse</button>
         </div>
       </div>
-      ${filtered.length===0 ? `<p style="color:var(--text-dim);">Ni operacij.</p>` : filtered.map(renderOpCard).join('')}
+      ${filtered.length===0 ? `<p style="color:var(--text-dim);">Ni vnosov.</p>` : filtered.map(op=>renderOpCard(op,kind)).join('')}
     </div>`;
 }
-function renderOpCard(op){
+async function renderOps(){ return renderOperationsList('view-ops', ['naklad','razklad'], 'ops', 'Naklad / Razklad'); }
+async function renderOpravila(){ return renderOperationsList('view-opravila', ['opravilo'], 'opravila', 'Opravila'); }
+async function renderServisi(){ return renderOperationsList('view-servisi', ['servis'], 'servisi', 'Servisi'); }
+
+function renderOpCard(op, kind){
+  const cfg = KIND_CONFIG[kind];
+  const isCraneKind = kind==='ops';
   const total = op.items.length;
   const checked = op.items.filter(i=>i.checked).length;
   const pct = total ? Math.round(checked/total*100) : 0;
-  const expanded = State.expandedOp === op.id;
+  const expanded = State[cfg.expandedKey] === op.id;
+  const label = op.crane
+    ? `<span class="crane-name">${escapeHtml(op.crane.name)}</span><span class="crane-code mono">${escapeHtml(op.crane.code)}</span>`
+    : `<span class="crane-name">${escapeHtml(op.event?.title || 'Splošno')}</span>`;
   return `
     <div class="op-card">
-      <div class="op-head" data-action="toggle-op" data-id="${op.id}">
+      <div class="op-head" data-action="toggle-op" data-kind="${kind}" data-id="${op.id}">
         <span class="type-badge ${op.type}">${TYPE_LABEL[op.type]}</span>
-        <span class="crane-name">${escapeHtml(op.crane?.name||'')}</span>
-        <span class="crane-code mono">${escapeHtml(op.crane?.code||'')}</span>
+        ${label}
+        ${op.event?.urgent ? `<span class="urgent-dot" title="Nujno"></span>` : ''}
         <span class="meta">
           ${op.event?.site_name ? escapeHtml(op.event.site_name)+' · ' : ''}${op.event ? fmtDate(op.event.start_at) : ''}
           <span class="progress-wrap"><span class="progress-bar" style="width:${pct}%"></span></span>
@@ -623,23 +726,30 @@ function renderOpCard(op){
       </div>
       ${expanded ? `
         <div class="op-items">
-          ${op.items.map(it=>`
+          ${op.items.length===0 ? `<p style="color:var(--text-dim);font-size:13px;margin:4px 0;">${isCraneKind?'Ni postavk.':'Ni še nalog.'}</p>` : op.items.map(it=>`
             <div class="item-row ${it.diverted?'diverted':''}">
-              <input type="checkbox" ${it.checked?'checked':''} ${it.diverted?'disabled':''} data-action="toggle-item" data-id="${it.id}">
+              <input type="checkbox" ${it.checked?'checked':''} ${it.diverted?'disabled':''} data-action="toggle-item" data-kind="${kind}" data-id="${it.id}">
               <div class="pname">
-                ${escapeHtml(it.part_name)} <span class="qty">× ${it.qty}</span>
+                ${escapeHtml(it.part_name)} ${isCraneKind?`<span class="qty">× ${it.qty}</span>`:''}
                 ${it.source_note ? `<span class="note-badge">⚠ ${escapeHtml(it.source_note)}</span>`:''}
                 ${it.diverted ? `<span class="note-badge">↪ Šlo drugam: ${escapeHtml(it.diverted_note||'')}</span>`:''}
               </div>
-              ${isAdmin() ? (it.diverted
+              ${isAdmin() && isCraneKind ? (it.diverted
                   ? `<button class="btn btn-sm" data-action="undo-divert" data-id="${it.id}">Prekliči</button>`
                   : `<button class="btn btn-sm" data-action="divert-item" data-id="${it.id}">Šlo drugam</button>`
                 ) : ''}
+              ${isAdmin() && !isCraneKind && op.status==='odprto' ? `<button class="btn btn-sm btn-danger" data-action="delete-task" data-kind="${kind}" data-id="${it.id}">×</button>` : ''}
             </div>`).join('')}
         </div>
+        ${isAdmin() && !isCraneKind && op.status==='odprto' ? `
+          <div class="op-items" style="padding-top:0;display:flex;gap:6px;">
+            <input id="task-input-${op.id}" placeholder="Nova naloga ..." style="flex:1;padding:7px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+            <button class="btn btn-sm btn-primary" data-action="add-task" data-kind="${kind}" data-id="${op.id}">+ Dodaj</button>
+          </div>
+        ` : ''}
         <div class="op-footer">
-          ${isAdmin() && op.status==='odprto' ? `<button class="btn btn-primary" data-action="close-op" data-id="${op.id}">Zaključi</button>`:''}
-          ${isAdmin() && op.status==='zaključeno' ? `<button class="btn" data-action="reopen-op" data-id="${op.id}">Ponovno odpri</button>`:''}
+          ${isAdmin() && op.status==='odprto' ? `<button class="btn btn-primary" data-action="close-op" data-kind="${kind}" data-id="${op.id}">Zaključi</button>`:''}
+          ${isAdmin() && op.status==='zaključeno' ? `<button class="btn" data-action="reopen-op" data-kind="${kind}" data-id="${op.id}">Ponovno odpri</button>`:''}
         </div>
       ` : ''}
     </div>`;
@@ -657,7 +767,8 @@ async function renderAlerts(){
 
   el.innerHTML = `
     <div class="panel">
-      <h2>⚠ Manjkajoči deli po razkladu</h2>
+      <h2>⚠ Opozorila</h2>
+      <p style="color:var(--text-dim);font-size:12px;margin-top:-6px;">Manjkajoči deli po razkladu, nujni vnosi in opravila/servisi, ki čakajo več kot 3 dni.</p>
       ${alerts.length===0 ? `<p style="color:var(--text-dim);">Ni opozoril.</p>` : alerts.map(a=>`
         <div class="alert-row al">
           <div class="msg">${escapeHtml(a.message)}<div class="when">${fmtDateTime(a.created_at)}</div></div>
@@ -807,11 +918,15 @@ async function render(){
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===State.tab));
   document.getElementById('view-calendar').classList.toggle('hidden', State.tab!=='calendar');
   document.getElementById('view-ops').classList.toggle('hidden', State.tab!=='ops');
+  document.getElementById('view-opravila').classList.toggle('hidden', State.tab!=='opravila');
+  document.getElementById('view-servisi').classList.toggle('hidden', State.tab!=='servisi');
   document.getElementById('view-alerts').classList.toggle('hidden', State.tab!=='alerts');
   document.getElementById('view-admin').classList.toggle('hidden', State.tab!=='admin');
 
   if(State.tab==='calendar') await renderCalendar();
   if(State.tab==='ops') await renderOps();
+  if(State.tab==='opravila') await renderOpravila();
+  if(State.tab==='servisi') await renderServisi();
   if(State.tab==='alerts') await renderAlerts();
   if(State.tab==='admin') await renderAdmin();
   await refreshAlertBadge();
@@ -839,24 +954,35 @@ document.addEventListener('click', async (ev)=>{
     case 'event-click': { ev.stopPropagation(); return openEventDetail(t.dataset.id); }
     case 'save-event': return saveEventForm();
     case 'delete-event': await db.deleteEvent(t.dataset.id); closeModal(); return render();
-    case 'goto-ops': closeModal(); State.tab='ops'; return render();
+    case 'goto-ops': { closeModal(); State.tab = t.dataset.goto || 'ops'; return render(); }
     case 'month-prev': State.calMonth = new Date(State.calMonth.getFullYear(), State.calMonth.getMonth()-1, 1); return renderCalendar();
     case 'month-next': State.calMonth = new Date(State.calMonth.getFullYear(), State.calMonth.getMonth()+1, 1); return renderCalendar();
     case 'month-today': State.calMonth = new Date(); return renderCalendar();
 
-    case 'ops-filter': State.opsFilter = t.dataset.f; return renderOps();
-    case 'toggle-op': State.expandedOp = (State.expandedOp===t.dataset.id) ? null : t.dataset.id; return renderOps();
-    case 'toggle-item': { ev.stopPropagation(); await db.toggleItem(t.dataset.id, t.checked); return renderOps(); }
+    case 'ops-filter': { const kind=t.dataset.kind; State[KIND_FILTERKEY[kind]] = t.dataset.f; return KIND_CONFIG[kind].render(); }
+    case 'toggle-op': { const kind=t.dataset.kind; const cfg=KIND_CONFIG[kind]; State[cfg.expandedKey] = (State[cfg.expandedKey]===t.dataset.id) ? null : t.dataset.id; return cfg.render(); }
+    case 'toggle-item': { ev.stopPropagation(); const kind=t.dataset.kind; await db.toggleItem(t.dataset.id, t.checked); return KIND_CONFIG[kind].render(); }
     case 'divert-item': { ev.stopPropagation(); return openDivertForm(t.dataset.id); }
     case 'save-divert': return saveDivertForm(t.dataset.id);
     case 'undo-divert': { ev.stopPropagation(); await db.undoDivertItem(t.dataset.id); return renderOps(); }
+    case 'add-task': {
+      ev.stopPropagation();
+      const kind=t.dataset.kind, opId=t.dataset.id;
+      const input = document.getElementById('task-input-'+opId);
+      const name = input.value.trim();
+      if(!name) return;
+      await db.addTaskItem(opId, name);
+      return KIND_CONFIG[kind].render();
+    }
+    case 'delete-task': { ev.stopPropagation(); const kind=t.dataset.kind; await db.deleteTaskItem(t.dataset.id); return KIND_CONFIG[kind].render(); }
     case 'close-op': {
       ev.stopPropagation();
-      if(!confirm('Zaključi to operacijo? Neobkljukani deli bodo sprožili opozorilo.')) return;
+      const kind=t.dataset.kind;
+      if(!confirm('Zaključi? Neobkljukane postavke bodo (pri razkladu takoj, pri opravilih/servisih po 3 dneh) sprožile opozorilo.')) return;
       await db.closeOperation(t.dataset.id);
-      await renderOps(); return refreshAlertBadge();
+      await KIND_CONFIG[kind].render(); return refreshAlertBadge();
     }
-    case 'reopen-op': { ev.stopPropagation(); await db.reopenOperation(t.dataset.id); return renderOps(); }
+    case 'reopen-op': { ev.stopPropagation(); const kind=t.dataset.kind; await db.reopenOperation(t.dataset.id); return KIND_CONFIG[kind].render(); }
 
     case 'resolve-alert': await db.resolveAlert(t.dataset.id); return renderAlerts();
     case 'resolve-note': await db.resolvePendingNote(t.dataset.id); return renderAlerts();
@@ -881,8 +1007,14 @@ document.addEventListener('click', async (ev)=>{
   }
 });
 document.addEventListener('change', async (ev)=>{
-  const t = ev.target.closest('[data-action="role-select"]');
-  if(t){ await db.updateProfileRole(t.dataset.id, t.value); return renderAdmin(); }
+  const roleSel = ev.target.closest('[data-action="role-select"]');
+  if(roleSel){ await db.updateProfileRole(roleSel.dataset.id, roleSel.value); return renderAdmin(); }
+
+  if(ev.target.id === 'f-type'){
+    const isTask = ['opravilo','servis'].includes(ev.target.value);
+    document.getElementById('f-tasks-wrap').classList.toggle('hidden', !isTask);
+    document.getElementById('f-crane-label').textContent = ev.target.value==='opravilo' ? 'Žerjav (neobvezno)' : 'Žerjav';
+  }
 });
 
 document.querySelectorAll('nav.tabs button[data-tab]').forEach(btn=>{

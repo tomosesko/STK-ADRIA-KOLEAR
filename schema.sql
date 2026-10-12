@@ -13,11 +13,23 @@ create table profiles (
   created_at timestamptz not null default now()
 );
 
+-- Katalog modelov (proizvajalčevi PDF-ji) — ločeno od `cranes`, ki so naši konkretni,
+-- poimenovani najemni žerjavi. En model (npr. "Terex CTT 152-6") je lahko osnova za več
+-- imenovanih žerjavov, vsak v svoji izvedbi (podnožje/stolp/višina/roka).
+create table crane_models (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,          -- npr. "Terex CTT 152-6"
+  pdf_url text not null,
+  notes text,
+  created_at timestamptz not null default now()
+);
+
 create table cranes (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,          -- šifra, npr. "CTT95-GASPER"
   name text not null,                 -- ime, npr. "Gašper"
-  model text not null,                -- npr. "TRX CTT 95"
+  model text not null,                -- npr. "TRX CTT 95" (prikazno ime, neodvisno od kataloga)
+  crane_model_id uuid references crane_models(id),
   height_m numeric,
   jib_m numeric,
   notes text,
@@ -37,23 +49,26 @@ create table part_templates (
 
 create table calendar_events (
   id uuid primary key default gen_random_uuid(),
-  crane_id uuid not null references cranes(id),
-  type text not null check (type in ('naklad','razklad','drugo')),
+  crane_id uuid references cranes(id),   -- NULL dovoljen samo za splošna "opravila" (ni vezano na en žerjav)
+  type text not null check (type in ('naklad','razklad','opravilo','servis','drugo')),
   title text,
   site_name text,
   start_at timestamptz not null,
   end_at timestamptz,
   notes text,
+  urgent boolean not null default false,
   created_by uuid references profiles(id),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint crane_required_unless_opravilo check (type = 'opravilo' or crane_id is not null)
 );
 
 create table operations (
   id uuid primary key default gen_random_uuid(),
   calendar_event_id uuid not null unique references calendar_events(id) on delete cascade,
-  crane_id uuid not null references cranes(id),
-  type text not null check (type in ('naklad','razklad')),
+  crane_id uuid references cranes(id),
+  type text not null check (type in ('naklad','razklad','opravilo','servis')),
   status text not null check (status in ('odprto','zaključeno')) default 'odprto',
+  stale_alerted boolean not null default false,
   created_at timestamptz not null default now(),
   closed_at timestamptz
 );
@@ -164,6 +179,18 @@ begin
         where operation_id = src_op_id
         order by sort_order;
     end if;
+
+  elsif NEW.type in ('opravilo','servis') then
+    -- Naloge ni od kje samodejno povzeti — admin jih doda sam (klient kliče add_task_item
+    -- po tem, ko je dogodek ustvarjen). Tu samo ustvarimo operacijo.
+    insert into operations (calendar_event_id, crane_id, type)
+      values (NEW.id, NEW.crane_id, NEW.type) returning id into new_op_id;
+  end if;
+
+  if NEW.urgent then
+    insert into alerts (operation_id, operation_item_id, message)
+      select o.id, null, '🔴 Nujno — ' || upper(NEW.type) || ': ' || coalesce(NEW.title, '(brez naslova)')
+      from operations o where o.calendar_event_id = NEW.id;
   end if;
 
   return NEW;
@@ -281,11 +308,59 @@ begin
 end;
 $$ language plpgsql security definer;
 
+-- Doda nalogo na opravilo/servis (admin jih vnese ob ustvarjanju dogodka ali kasneje).
+create or replace function add_task_item(op_id uuid, task_name text) returns uuid as $$
+declare
+  new_id uuid;
+  next_order integer;
+begin
+  if not is_admin() then
+    raise exception 'Samo admin lahko doda nalogo.';
+  end if;
+  select coalesce(max(sort_order), 0) + 1 into next_order from operation_items where operation_id = op_id;
+  insert into operation_items (operation_id, part_name, qty, sort_order)
+    values (op_id, task_name, 1, next_order) returning id into new_id;
+  return new_id;
+end;
+$$ language plpgsql security definer;
+
+create or replace function delete_task_item(item_id uuid) returns void as $$
+begin
+  if not is_admin() then
+    raise exception 'Samo admin lahko to spremeni.';
+  end if;
+  delete from operation_items where id = item_id;
+end;
+$$ language plpgsql security definer;
+
+-- Pokliči ob vsakem zagonu aplikacije (katerikoli prijavljen uporabnik): če je opravilo/servis
+-- odprto že več kot 3 dni in ima neobkljukane naloge, sproži (enkratno) opozorilo.
+create or replace function check_stale_operations() returns void as $$
+begin
+  insert into alerts (operation_id, operation_item_id, message)
+  select o.id, null,
+    '⏰ Čaka že več kot 3 dni — ' || upper(o.type) || ': ' || coalesce(ce.title, ce.site_name, '(brez naslova)')
+  from operations o
+  join calendar_events ce on ce.id = o.calendar_event_id
+  where o.type in ('opravilo','servis')
+    and o.status = 'odprto'
+    and o.stale_alerted = false
+    and o.created_at < now() - interval '3 days'
+    and exists (select 1 from operation_items oi where oi.operation_id = o.id and oi.checked = false);
+
+  update operations set stale_alerted = true
+    where type in ('opravilo','servis') and status = 'odprto' and stale_alerted = false
+      and created_at < now() - interval '3 days'
+      and exists (select 1 from operation_items oi where oi.operation_id = operations.id and oi.checked = false);
+end;
+$$ language plpgsql security definer;
+
 -- ============================================================
 -- 8. ROW LEVEL SECURITY
 -- ============================================================
 
 alter table profiles enable row level security;
+alter table crane_models enable row level security;
 alter table cranes enable row level security;
 alter table part_templates enable row level security;
 alter table calendar_events enable row level security;
@@ -297,6 +372,12 @@ alter table alerts enable row level security;
 -- profiles: vsak prijavljen lahko vidi vse (za prikaz imen "obkljukal: ..."), spremeni lahko samo admin
 create policy "profiles_select" on profiles for select using (auth.role() = 'authenticated');
 create policy "profiles_admin_update" on profiles for update using (is_admin()) with check (is_admin());
+
+-- crane_models (katalog proizvajalca)
+create policy "crane_models_select" on crane_models for select using (auth.role() = 'authenticated');
+create policy "crane_models_admin_insert" on crane_models for insert with check (is_admin());
+create policy "crane_models_admin_update" on crane_models for update using (is_admin()) with check (is_admin());
+create policy "crane_models_admin_delete" on crane_models for delete using (is_admin());
 
 -- cranes
 create policy "cranes_select" on cranes for select using (auth.role() = 'authenticated');
@@ -335,10 +416,47 @@ create policy "alerts_select" on alerts for select using (auth.role() = 'authent
 alter publication supabase_realtime add table calendar_events, operations, operation_items, pending_notes, alerts;
 
 -- ============================================================
+-- 10. KATALOG MODELOV — uradni Terex PDF-ji s stk-adria.com (prebrano 12. 10. 2026)
+-- ============================================================
+
+insert into crane_models (name, pdf_url) values
+('Terex FC6-24', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-fc6-24h.pdf'),
+('Terex CTT 91-5', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-91-5.pdf'),
+('Terex CTT 121A-5', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-121A-5.pdf'),
+('Terex CTT 132-6', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-132-6.pdf'),
+('Terex CTT 141A-6', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-141A-6.pdf'),
+('Terex CTT 152-6', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-152-6.pdf'),
+('Terex CTT 161A-6', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-161A-6.pdf'),
+('Terex CTT 172-8', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-172-8.pdf'),
+('Terex CTT 181B-8', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-181B-8.pdf'),
+('Terex CTT 202-8', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-202-8.pdf'),
+-- POZOR: na strani ima "Terex CTT 202-10" isto povezavo kot "Terex CTT 202-8" (verjetno napaka
+-- na spletni strani) — dokler ne dobimo pravega PDF-ja, kaže na isti dokument kot opozorilo.
+('Terex CTT 202-10', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-202-8.pdf'),
+('Terex CTT 222-10', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-222-10.pdf'),
+('Terex CTT 231-12', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-231-12.pdf'),
+('Terex CTT 292-12', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-292-12.pdf'),
+('Terex CTT 332-16', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-332-16.pdf'),
+('Terex CTT 472-20', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-472-20.pdf'),
+('Terex CTT 561A-20', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-561a-20.pdf'),
+('Terex CTT 561A-32', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt-561a-32.pdf'),
+('Terex CTT 721B-40', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-ctt721b-40.pdf'),
+('Terex CBR 21H', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cbr-21h.pdf'),
+('Terex CBR 24 PLUS', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cbr-24-plus.pdf'),
+('Terex CBR 28 PLUS', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cbr-28-plus.pdf'),
+('Terex CBR 32 PLUS', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cbr-32-plus.pdf'),
+('Terex CBR 40H', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cbr-40h.pdf'),
+('Terex CSE 30', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cse-30.pdf'),
+('Terex CSE 32', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cse-32.pdf'),
+('Terex CSE 36', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cse-36.pdf'),
+('Terex CSE 40', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cse-40.pdf');
+
+-- ============================================================
 -- Konec. Po tem:
 -- 1) Authentication -> Users -> Invite user, za vsakega člana ekipe (email).
 -- 2) Za tri admine poženi (po njihovi prvi prijavi, da obstaja vrstica v profiles):
 --    update profiles set role = 'admin' where email in ('...','...','...');
--- 3) Vstavi 38 žerjavov v tabelo cranes in njihove nakladalne liste v part_templates
---    (lahko ročno v Table editor, ali mi pošlji seznam in pripravim INSERT stavke).
+-- 3) Vstavi 38 žerjavov v tabelo cranes (poveži crane_model_id na pravi crane_models
+--    zapis) in njihove nakladalne liste v part_templates (lahko ročno v Table editor,
+--    ali mi pošlji seznam in pripravim INSERT stavke).
 -- ============================================================

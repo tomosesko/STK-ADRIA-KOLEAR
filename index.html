@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>STK Adria — Koledar žerjavov</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#12161b; --panel:#1b2026; --panel-2:#242b33; --border:#333c47;
+  --text:#e9edf1; --text-dim:#97a3b0; --accent:#f0a83c; --accent-ink:#1a1206;
+  --naklad:#3fae9c; --razklad:#e08a3c; --drugo:#6b7684; --danger:#e2574a; --ok:#49b780;
+  --radius:10px;
+  font-size:16px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+body{min-height:100vh;}
+code,.mono{font-family:"SF Mono",Menlo,Consolas,monospace;}
+a{color:var(--accent);}
+button{font-family:inherit;cursor:pointer;}
+.hidden{display:none !important;}
+
+/* ---------- login ---------- */
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.login-box{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;}
+.login-box h1{font-size:20px;margin:0 0 4px;}
+.login-box p.sub{color:var(--text-dim);font-size:13px;margin:0 0 20px;}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:12px;color:var(--text-dim);margin-bottom:5px;}
+.field input,.field select,.field textarea{width:100%;padding:10px 12px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;}
+.field textarea{resize:vertical;min-height:60px;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:8px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);font-size:14px;font-weight:600;}
+.btn:hover{border-color:var(--accent);}
+.btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+.btn-primary:hover{filter:brightness(1.08);}
+.btn-danger{background:var(--danger);color:#fff;border-color:var(--danger);}
+.btn-full{width:100%;justify-content:center;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.err{color:var(--danger);font-size:13px;margin-top:10px;min-height:1px;}
+
+/* ---------- app shell ---------- */
+#app{display:none;min-height:100vh;flex-direction:column;}
+#app.show{display:flex;}
+header.topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:20;}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;}
+.brand .tag{background:var(--accent);color:var(--accent-ink);font-size:11px;padding:2px 6px;border-radius:5px;}
+.who{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-dim);}
+.who .role-badge{background:var(--panel-2);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-size:11px;color:var(--text);}
+
+nav.tabs{display:flex;gap:4px;padding:8px 16px 0;border-bottom:1px solid var(--border);background:var(--panel);overflow-x:auto;}
+nav.tabs button{background:none;border:none;color:var(--text-dim);padding:10px 14px;font-size:14px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap;}
+nav.tabs button.active{color:var(--text);border-bottom-color:var(--accent);}
+nav.tabs button .count{background:var(--danger);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:5px;}
+
+main{flex:1;padding:18px;max-width:1100px;width:100%;margin:0 auto;}
+.demo-banner{background:#3a2d12;border:1px solid var(--accent);color:#f5d8a0;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;}
+
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+.panel h2{margin:0 0 12px;font-size:16px;}
+.row-between{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+
+/* ---------- calendar ---------- */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+.cal-dow{font-size:11px;color:var(--text-dim);text-align:center;padding:4px 0;}
+.cal-day{background:var(--panel-2);border:1px solid var(--border);border-radius:8px;min-height:88px;padding:6px;font-size:12px;position:relative;cursor:pointer;}
+.cal-day:hover{border-color:var(--accent);}
+.cal-day.other-month{opacity:.35;}
+.cal-day.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);}
+.cal-day .num{font-weight:700;margin-bottom:4px;}
+.chip{display:block;border-radius:5px;padding:2px 5px;margin-bottom:3px;font-size:11px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chip.naklad{background:var(--naklad);} .chip.razklad{background:var(--razklad);} .chip.drugo{background:var(--drugo);}
+.chip-more{font-size:10px;color:var(--text-dim);}
+
+/* ---------- operation cards ---------- */
+.op-card{border:1px solid var(--border);border-radius:9px;margin-bottom:10px;background:var(--panel-2);}
+.op-head{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;}
+.op-head .type-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;color:#fff;}
+.type-badge.naklad{background:var(--naklad);} .type-badge.razklad{background:var(--razklad);}
+.op-head .crane-name{font-weight:700;}
+.op-head .crane-code{color:var(--text-dim);font-size:12px;}
+.op-head .meta{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-dim);}
+.progress-wrap{width:90px;height:6px;background:var(--border);border-radius:4px;overflow:hidden;}
+.progress-bar{height:100%;background:var(--ok);}
+.status-tag{font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--border);}
+.status-tag.zaključeno{color:var(--ok);border-color:var(--ok);}
+.op-items{border-top:1px solid var(--border);padding:8px 14px;}
+.item-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);}
+.item-row:last-child{border-bottom:none;}
+.item-row input[type=checkbox]{width:18px;height:18px;}
+.item-row .pname{flex:1;}
+.item-row .pname .qty{color:var(--text-dim);font-size:12px;}
+.item-row .note-badge{display:block;font-size:11px;color:var(--razklad);margin-top:2px;}
+.item-row.diverted .pname{text-decoration:line-through;color:var(--text-dim);}
+.op-footer{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid var(--border);}
+
+/* ---------- alerts ---------- */
+.alert-row{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:var(--panel-2);}
+.alert-row.pn{border-left:3px solid var(--razklad);}
+.alert-row.al{border-left:3px solid var(--danger);}
+.alert-row .msg{flex:1;font-size:13px;}
+.alert-row .when{font-size:11px;color:var(--text-dim);}
+
+/* ---------- admin tables ---------- */
+table.admin-table{width:100%;border-collapse:collapse;font-size:13px;}
+table.admin-table th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--border);}
+table.admin-table td{padding:7px 8px;border-bottom:1px solid var(--border);}
+table.admin-table input,table.admin-table select{width:100%;padding:5px 7px;background:var(--panel);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;}
+.subtabs{display:flex;gap:6px;margin-bottom:14px;}
+.subtabs button{background:var(--panel-2);border:1px solid var(--border);color:var(--text-dim);padding:7px 12px;border-radius:7px;font-size:13px;}
+.subtabs button.active{color:var(--text);border-color:var(--accent);}
+
+/* ---------- modal ---------- */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50;}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-width:460px;width:100%;max-height:88vh;overflow:auto;}
+.modal h3{margin:0 0 14px;}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+.detail-line{font-size:13px;margin-bottom:8px;}
+.detail-line .k{color:var(--text-dim);display:inline-block;width:90px;}
+
+@media (max-width:640px){
+  .cal-day{min-height:64px;font-size:11px;}
+  main{padding:12px;}
+  .op-head .meta{display:none;}
+}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-box">
+    <h1>STK Adria</h1>
+    <p class="sub">Koledar žerjavov &amp; naklad/razklad</p>
+    <div class="field">
+      <label>E-poštni naslov</label>
+      <input type="email" id="login-email" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Geslo</label>
+      <input type="password" id="login-password" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-full" id="login-btn">Prijava</button>
+    <div class="err" id="login-err"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="topbar">
+    <div class="brand">STK Adria <span class="tag">KOLEDAR</span></div>
+    <div class="who">
+      <span id="who-name"></span>
+      <span class="role-badge" id="who-role"></span>
+      <button class="btn btn-sm" id="logout-btn">Odjava</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="calendar" class="active">Koledar</button>
+    <button data-tab="ops">Naklad / Razklad</button>
+    <button data-tab="alerts">Opozorila <span class="count hidden" id="alerts-count">0</span></button>
+    <button data-tab="admin" id="tab-admin-btn" class="hidden">Uprava</button>
+  </nav>
+
+  <main>
+    <div class="demo-banner hidden" id="demo-banner">
+      Prikazani so vzorčni podatki (demo način) — Supabase še ni povezan. Glej README.md za nastavitev.
+    </div>
+
+    <section id="view-calendar"></section>
+    <section id="view-ops" class="hidden"></section>
+    <section id="view-alerts" class="hidden"></section>
+    <section id="view-admin" class="hidden"></section>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script>
+/* ============================================================
+   KONFIGURACIJA — vstavi svoje Supabase podatke (Settings -> API)
+   Dokler je spodaj privzeta vrednost, aplikacija teče v DEMO načinu
+   z vzorčnimi podatki (nič se ne shrani).
+============================================================ */
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const DEMO_MODE = SUPABASE_URL === 'YOUR_SUPABASE_URL' || !SUPABASE_URL;
+
+const DOW = ['Pon','Tor','Sre','Čet','Pet','Sob','Ned'];
+const TYPE_LABEL = {naklad:'NAKLAD', razklad:'RAZKLAD', drugo:'DRUGO'};
+
+function uid(){ return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36); }
+function fmtDate(d){ d = new Date(d); return d.toLocaleDateString('sl-SI',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+function fmtDateTime(d){ d = new Date(d); return d.toLocaleDateString('sl-SI',{day:'2-digit',month:'2-digit'}) + ' ' + d.toLocaleTimeString('sl-SI',{hour:'2-digit',minute:'2-digit'}); }
+function toInputDateTime(d){ const dt=new Date(d); const pad=n=>String(n).padStart(2,'0'); return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ============================================================
+   DEMO PODATKOVNI SLOJ (v spominu) — uporablja se, kadar Supabase
+   ni konfiguriran, tako da lahko ekipa/razvoj preizkusi vmesnik.
+============================================================ */
+function makeDemoStore(){
+  const now = new Date();
+  const cranes = [
+    {id:'c1', code:'CTT95-GASPER', name:'Gašper', model:'TRX CTT 95', height_m:50, jib_m:20, notes:'', active:true},
+    {id:'c2', code:'CTT95-LUBO', name:'Lubo', model:'TRX CTT 95', height_m:20, jib_m:30, notes:'', active:true},
+    {id:'c3', code:'CTT 161-PETER', name:'Peter', model:'TRX CTT 161', height_m:42, jib_m:55, notes:'', active:true},
+  ];
+  const part_templates = [
+    {id:'pt1', crane_id:'c1', part_name:'Podnožje C38', qty:1, sort_order:1, notes:''},
+    {id:'pt2', crane_id:'c1', part_name:'Stolpna sekcija S1', qty:4, sort_order:2, notes:''},
+    {id:'pt3', crane_id:'c1', part_name:'Vrtljivi del + kabina', qty:1, sort_order:3, notes:''},
+    {id:'pt4', crane_id:'c1', part_name:'Protiroka + balast B', qty:6, sort_order:4, notes:''},
+    {id:'pt5', crane_id:'c1', part_name:'Roka — sekcija 1', qty:1, sort_order:5, notes:''},
+    {id:'pt6', crane_id:'c1', part_name:'Roka — sekcija vrh', qty:1, sort_order:6, notes:''},
+  ];
+  const profiles = [
+    {id:'u-admin', email:'marjetka@stkadria.si', full_name:'Marjetka Podbregar', role:'admin'},
+    {id:'u-viewer', email:'ekipa@stkadria.si', full_name:'Ekipa — skladišče', role:'viewer'},
+  ];
+  const d1 = new Date(now.getFullYear(), now.getMonth(), now.getDate()+2, 7, 0);
+  const calendar_events = [
+    {id:'e1', crane_id:'c1', type:'naklad', title:'Naklad Gašper', site_name:'Gradbišče Koper — Istrska', start_at:d1.toISOString(), end_at:null, notes:'', created_by:'u-admin'},
+  ];
+  const operations = [
+    {id:'o1', calendar_event_id:'e1', crane_id:'c1', type:'naklad', status:'odprto', closed_at:null, created_at:now.toISOString()},
+  ];
+  const operation_items = part_templates.map((pt,i)=>({
+    id:'oi'+i, operation_id:'o1', part_name:pt.part_name, qty:pt.qty, sort_order:pt.sort_order,
+    checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note:null
+  }));
+  const pending_notes = [];
+  const alerts = [];
+  return {cranes, part_templates, profiles, calendar_events, operations, operation_items, pending_notes, alerts};
+}
+
+function buildDemoDb(){
+  const store = makeDemoStore();
+  let currentUser = null;
+  const listeners = [];
+  function notify(){ listeners.forEach(fn=>fn()); }
+
+  function withJoins(op){
+    const crane = store.cranes.find(c=>c.id===op.crane_id);
+    const event = store.calendar_events.find(e=>e.id===op.calendar_event_id);
+    const items = store.operation_items.filter(i=>i.operation_id===op.id).sort((a,b)=>a.sort_order-b.sort_order);
+    return {...op, crane, event, items};
+  }
+
+  return {
+    DEMO_MODE:true,
+    auth:{
+      async getSession(){ return currentUser ? {user:currentUser} : null; },
+      async signIn(email,password){
+        const p = store.profiles.find(p=>p.email.toLowerCase()===email.toLowerCase());
+        if(!p) throw new Error('V demo načinu uporabi: marjetka@stkadria.si (admin) ali ekipa@stkadria.si (ekipa) — geslo je poljubno.');
+        currentUser = {id:p.id, email:p.email};
+        return currentUser;
+      },
+      async signOut(){ currentUser = null; },
+      onChange(){ /* no-op v demo načinu */ }
+    },
+    onRealtime(fn){ listeners.push(fn); },
+    async getProfile(userId){ return store.profiles.find(p=>p.id===userId); },
+    async listProfiles(){ return store.profiles; },
+    async updateProfileRole(id, role){ const p=store.profiles.find(p=>p.id===id); if(p) p.role=role; notify(); },
+    async listCranes(){ return [...store.cranes].sort((a,b)=>a.name.localeCompare(b.name)); },
+    async upsertCrane(c){
+      if(c.id){ Object.assign(store.cranes.find(x=>x.id===c.id), c); }
+      else { c.id = uid(); c.active = true; store.cranes.push(c); }
+      notify();
+    },
+    async deleteCrane(id){ store.cranes = store.cranes.filter(c=>c.id!==id); notify(); },
+    async listPartTemplates(craneId){ return store.part_templates.filter(p=>p.crane_id===craneId).sort((a,b)=>a.sort_order-b.sort_order); },
+    async upsertPartTemplate(pt){
+      if(pt.id){ Object.assign(store.part_templates.find(x=>x.id===pt.id), pt); }
+      else { pt.id = uid(); store.part_templates.push(pt); }
+      notify();
+    },
+    async deletePartTemplate(id){ store.part_templates = store.part_templates.filter(p=>p.id!==id); notify(); },
+    async listEvents(fromISO, toISO){
+      return store.calendar_events
+        .filter(e=> e.start_at >= fromISO && e.start_at <= toISO)
+        .map(e=>({...e, crane: store.cranes.find(c=>c.id===e.crane_id)}));
+    },
+    async createEvent(evt){
+      evt.id = uid(); evt.created_by = currentUser.id; evt.created_at = new Date().toISOString();
+      store.calendar_events.push(evt);
+      if(evt.type==='naklad' || evt.type==='razklad'){
+        const op = {id:uid(), calendar_event_id:evt.id, crane_id:evt.crane_id, type:evt.type, status:'odprto', closed_at:null, created_at:new Date().toISOString()};
+        store.operations.push(op);
+        if(evt.type==='naklad'){
+          store.part_templates.filter(pt=>pt.crane_id===evt.crane_id).forEach(pt=>{
+            const pn = store.pending_notes.find(n=>n.crane_id===evt.crane_id && n.part_name===pt.part_name && !n.resolved);
+            store.operation_items.push({id:uid(), operation_id:op.id, part_name:pt.part_name, qty:pt.qty, sort_order:pt.sort_order, checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null, source_note: pn ? pn.note : null});
+          });
+        } else {
+          const srcOps = store.operations.filter(o=>o.crane_id===evt.crane_id && o.type==='naklad')
+            .map(o=>({o, ev: store.calendar_events.find(e=>e.id===o.calendar_event_id)}))
+            .filter(x=>x.ev && x.ev.start_at <= evt.start_at)
+            .sort((a,b)=> b.ev.start_at.localeCompare(a.ev.start_at));
+          if(srcOps[0]){
+            const srcItems = store.operation_items.filter(i=>i.operation_id===srcOps[0].o.id);
+            srcItems.forEach(it=>{
+              store.operation_items.push({id:uid(), operation_id:op.id, part_name:it.part_name, qty:it.qty, sort_order:it.sort_order, checked:false, checked_by:null, checked_at:null, diverted:false, diverted_note:null,
+                source_note: it.diverted ? ('Prejšnjič ni bil vrnjen: ' + (it.diverted_note||'')) : null});
+            });
+          }
+        }
+      }
+      notify();
+      return evt;
+    },
+    async deleteEvent(id){
+      const op = store.operations.find(o=>o.calendar_event_id===id);
+      if(op){ store.operation_items = store.operation_items.filter(i=>i.operation_id!==op.id); store.operations = store.operations.filter(o=>o.id!==op.id); }
+      store.calendar_events = store.calendar_events.filter(e=>e.id!==id);
+      notify();
+    },
+    async listOperations(){ return store.operations.map(withJoins).sort((a,b)=> (b.event?.start_at||'').localeCompare(a.event?.start_at||'')); },
+    async toggleItem(itemId, checked){
+      const it = store.operation_items.find(i=>i.id===itemId);
+      it.checked = checked; it.checked_by = checked ? currentUser.id : null; it.checked_at = checked ? new Date().toISOString() : null;
+      notify();
+    },
+    async divertItem(itemId, note){
+      const it = store.operation_items.find(i=>i.id===itemId);
+      it.diverted = true; it.diverted_note = note; it.checked=false; it.checked_by=null; it.checked_at=null;
+      const op = store.operations.find(o=>o.id===it.operation_id);
+      store.pending_notes.push({id:uid(), crane_id:op.crane_id, part_name:it.part_name, note, created_by:currentUser.id, created_at:new Date().toISOString(), resolved:false});
+      notify();
+    },
+    async undoDivertItem(itemId){
+      const it = store.operation_items.find(i=>i.id===itemId);
+      it.diverted=false; it.diverted_note=null;
+      notify();
+    },
+    async closeOperation(opId){
+      const op = store.operations.find(o=>o.id===opId);
+      op.status='zaključeno'; op.closed_at=new Date().toISOString();
+      if(op.type==='razklad'){
+        store.operation_items.filter(i=>i.operation_id===opId && !i.checked && !i.diverted).forEach(it=>{
+          store.alerts.push({id:uid(), operation_id:opId, operation_item_id:it.id, message:`Manjka pri razkladu: ${it.part_name} (${it.qty} kos)`, created_at:new Date().toISOString(), resolved:false});
+        });
+      }
+      notify();
+    },
+    async reopenOperation(opId){ const op=store.operations.find(o=>o.id===opId); op.status='odprto'; op.closed_at=null; notify(); },
+    async listAlerts(){ return [...store.alerts].sort((a,b)=>b.created_at.localeCompare(a.created_at)); },
+    async resolveAlert(id){ const a=store.alerts.find(a=>a.id===id); a.resolved=true; a.resolved_at=new Date().toISOString(); notify(); },
+    async listPendingNotes(){ return [...store.pending_notes].map(n=>({...n, crane: store.cranes.find(c=>c.id===n.crane_id)})).sort((a,b)=>b.created_at.localeCompare(a.created_at)); },
+    async resolvePendingNote(id){ const n=store.pending_notes.find(n=>n.id===id); n.resolved=true; n.resolved_at=new Date().toISOString(); notify(); },
+  };
+}
+
+/* ============================================================
+   SUPABASE PODATKOVNI SLOJ (pravi backend)
+============================================================ */
+function buildSupabaseDb(){
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  function check(r){ if(r.error) throw r.error; return r.data; }
+  return {
+    DEMO_MODE:false,
+    auth:{
+      async getSession(){ const {data} = await sb.auth.getSession(); return data.session; },
+      async signIn(email,password){ const r = await sb.auth.signInWithPassword({email,password}); if(r.error) throw r.error; return r.data.user; },
+      async signOut(){ await sb.auth.signOut(); },
+      onChange(fn){ sb.auth.onAuthStateChange((_e,session)=>fn(session)); }
+    },
+    onRealtime(fn){
+      sb.channel('db-changes')
+        .on('postgres_changes', {event:'*', schema:'public', table:'calendar_events'}, fn)
+        .on('postgres_changes', {event:'*', schema:'public', table:'operations'}, fn)
+        .on('postgres_changes', {event:'*', schema:'public', table:'operation_items'}, fn)
+        .on('postgres_changes', {event:'*', schema:'public', table:'alerts'}, fn)
+        .on('postgres_changes', {event:'*', schema:'public', table:'pending_notes'}, fn)
+        .subscribe();
+    },
+    async getProfile(userId){ return check(await sb.from('profiles').select('*').eq('id',userId).single()); },
+    async listProfiles(){ return check(await sb.from('profiles').select('*').order('full_name')); },
+    async updateProfileRole(id, role){ check(await sb.from('profiles').update({role}).eq('id',id)); },
+    async listCranes(){ return check(await sb.from('cranes').select('*').order('name')); },
+    async upsertCrane(c){ check(await sb.from('cranes').upsert(c)); },
+    async deleteCrane(id){ check(await sb.from('cranes').delete().eq('id',id)); },
+    async listPartTemplates(craneId){ return check(await sb.from('part_templates').select('*').eq('crane_id',craneId).order('sort_order')); },
+    async upsertPartTemplate(pt){ check(await sb.from('part_templates').upsert(pt)); },
+    async deletePartTemplate(id){ check(await sb.from('part_templates').delete().eq('id',id)); },
+    async listEvents(fromISO,toISO){
+      const rows = check(await sb.from('calendar_events').select('*, cranes(*)').gte('start_at',fromISO).lte('start_at',toISO));
+      return rows.map(r=>({...r, crane:r.cranes}));
+    },
+    async createEvent(evt){ return check(await sb.from('calendar_events').insert(evt).select().single()); },
+    async deleteEvent(id){ check(await sb.from('calendar_events').delete().eq('id',id)); },
+    async listOperations(){
+      const rows = check(await sb.from('operations').select('*, cranes(*), calendar_events(*), operation_items(*)'));
+      return rows.map(r=>({...r, crane:r.cranes, event:r.calendar_events, items:(r.operation_items||[]).sort((a,b)=>a.sort_order-b.sort_order)}));
+    },
+    async toggleItem(itemId, checked){ check(await sb.rpc('toggle_item_checked', {item_id:itemId, is_checked:checked})); },
+    async divertItem(itemId, note){ check(await sb.rpc('divert_item', {item_id:itemId, note})); },
+    async undoDivertItem(itemId){ check(await sb.rpc('undo_divert_item', {item_id:itemId})); },
+    async closeOperation(opId){ check(await sb.rpc('close_operation', {op_id:opId})); },
+    async reopenOperation(opId){ check(await sb.rpc('reopen_operation', {op_id:opId})); },
+    async listAlerts(){ return check(await sb.from('alerts').select('*').order('created_at',{ascending:false})); },
+    async resolveAlert(id){ check(await sb.rpc('resolve_alert', {alert_id:id})); },
+    async listPendingNotes(){
+      const rows = check(await sb.from('pending_notes').select('*, cranes(*)').order('created_at',{ascending:false}));
+      return rows.map(r=>({...r, crane:r.cranes}));
+    },
+    async resolvePendingNote(id){ check(await sb.rpc('resolve_pending_note', {note_id:id})); },
+  };
+}
+
+const db = DEMO_MODE ? buildDemoDb() : buildSupabaseDb();
+
+/* ============================================================
+   STANJE + MODAL
+============================================================ */
+const State = { session:null, profile:null, tab:'calendar', calMonth:new Date(), cranes:[], expandedOp:null, opsFilter:'odprto' };
+
+function openModal(html){
+  document.getElementById('modal-root').innerHTML = `<div class="modal-backdrop" data-action="modal-backdrop"><div class="modal">${html}</div></div>`;
+}
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+
+/* ============================================================
+   PRIJAVA
+============================================================ */
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-err');
+  errEl.textContent='';
+  try{
+    await db.auth.signIn(email, password);
+    await bootSession();
+  }catch(e){ errEl.textContent = e.message || 'Napaka pri prijavi.'; }
+}
+async function doLogout(){ await db.auth.signOut(); State.session=null; State.profile=null; showLogin(); }
+
+function showLogin(){
+  document.getElementById('login-screen').style.display='flex';
+  document.getElementById('app').classList.remove('show');
+}
+async function bootSession(){
+  const session = await db.auth.getSession();
+  if(!session){ showLogin(); return; }
+  State.session = session;
+  const uidVal = session.user ? session.user.id : session.id;
+  State.profile = await db.getProfile(uidVal);
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').classList.add('show');
+  document.getElementById('who-name').textContent = State.profile.full_name || State.profile.email;
+  document.getElementById('who-role').textContent = State.profile.role === 'admin' ? 'ADMIN' : 'EKIPA';
+  document.getElementById('tab-admin-btn').classList.toggle('hidden', State.profile.role!=='admin');
+  document.getElementById('demo-banner').classList.toggle('hidden', !DEMO_MODE);
+  State.cranes = await db.listCranes();
+  render();
+}
+function isAdmin(){ return State.profile && State.profile.role === 'admin'; }
+
+/* ============================================================
+   KOLEDAR
+============================================================ */
+let calendarEventsCache = [];
+async function renderCalendar(){
+  const el = document.getElementById('view-calendar');
+  const month = State.calMonth;
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const startOffset = (first.getDay()+6)%7; // ponedeljek = 0
+  const gridStart = new Date(first); gridStart.setDate(first.getDate()-startOffset);
+  const gridEnd = new Date(gridStart); gridEnd.setDate(gridStart.getDate()+41);
+
+  calendarEventsCache = await db.listEvents(gridStart.toISOString(), gridEnd.toISOString());
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  let cells = '';
+  for(let i=0;i<42;i++){
+    const d = new Date(gridStart); d.setDate(gridStart.getDate()+i);
+    const inMonth = d.getMonth()===month.getMonth();
+    const isToday = d.getTime()===today.getTime();
+    const dayEvents = calendarEventsCache.filter(e=>{ const ed=new Date(e.start_at); return ed.getFullYear()===d.getFullYear() && ed.getMonth()===d.getMonth() && ed.getDate()===d.getDate(); });
+    const shown = dayEvents.slice(0,3);
+    cells += `<div class="cal-day ${inMonth?'':'other-month'} ${isToday?'today':''}" data-action="day-click" data-date="${d.toISOString()}">
+      <div class="num">${d.getDate()}</div>
+      ${shown.map(e=>`<span class="chip ${e.type}" data-action="event-click" data-id="${e.id}" title="${escapeHtml(e.crane?.name||'')} — ${escapeHtml(e.title||'')}">${TYPE_LABEL[e.type]} · ${escapeHtml(e.crane?.name||'?')}</span>`).join('')}
+      ${dayEvents.length>3 ? `<div class="chip-more">+${dayEvents.length-3} več</div>`:''}
+    </div>`;
+  }
+
+  el.innerHTML = `
+    <div class="panel">
+      <div class="row-between">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="btn btn-sm" data-action="month-prev">←</button>
+          <strong style="min-width:150px;display:inline-block;text-align:center;">${month.toLocaleDateString('sl-SI',{month:'long',year:'numeric'})}</strong>
+          <button class="btn btn-sm" data-action="month-next">→</button>
+          <button class="btn btn-sm" data-action="month-today">Danes</button>
+        </div>
+        ${isAdmin() ? `<button class="btn btn-primary" data-action="new-event">+ Nov dogodek</button>` : ''}
+      </div>
+      <div class="cal-grid">
+        ${DOW.map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+        ${cells}
+      </div>
+    </div>`;
+}
+
+function openEventForm(prefillDate){
+  const dt = prefillDate ? new Date(prefillDate) : new Date();
+  dt.setHours(7,0,0,0);
+  openModal(`
+    <h3>Nov dogodek</h3>
+    <div class="field"><label>Žerjav</label>
+      <select id="f-crane">${State.cranes.map(c=>`<option value="${c.id}">${escapeHtml(c.name)} — ${escapeHtml(c.code)}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Vrsta</label>
+      <select id="f-type">
+        <option value="naklad">Naklad</option>
+        <option value="razklad">Razklad</option>
+        <option value="drugo">Drugo</option>
+      </select>
+    </div>
+    <div class="field"><label>Naslov</label><input id="f-title" placeholder="npr. Naklad za gradbišče Koper"></div>
+    <div class="field"><label>Gradbišče / lokacija</label><input id="f-site"></div>
+    <div class="field"><label>Začetek</label><input type="datetime-local" id="f-start" value="${toInputDateTime(dt)}"></div>
+    <div class="field"><label>Opombe</label><textarea id="f-notes"></textarea></div>
+    <div class="err" id="f-err"></div>
+    <div class="modal-actions">
+      <button class="btn" data-action="modal-close">Prekliči</button>
+      <button class="btn btn-primary" data-action="save-event">Shrani</button>
+    </div>
+  `);
+}
+async function saveEventForm(){
+  const crane_id = document.getElementById('f-crane').value;
+  const type = document.getElementById('f-type').value;
+  const title = document.getElementById('f-title').value.trim();
+  const site_name = document.getElementById('f-site').value.trim();
+  const startLocal = document.getElementById('f-start').value;
+  const notes = document.getElementById('f-notes').value.trim();
+  if(!crane_id || !startLocal){ document.getElementById('f-err').textContent='Izberi žerjav in čas.'; return; }
+  try{
+    await db.createEvent({crane_id, type, title, site_name, start_at: new Date(startLocal).toISOString(), end_at:null, notes});
+    closeModal();
+    await renderCalendar();
+    await renderOps();
+  }catch(e){ document.getElementById('f-err').textContent = e.message; }
+}
+function openEventDetail(id){
+  const e = calendarEventsCache.find(x=>x.id===id);
+  if(!e) return;
+  openModal(`
+    <h3>${TYPE_LABEL[e.type]}</h3>
+    <div class="detail-line"><span class="k">Žerjav</span>${escapeHtml(e.crane?.name||'')} <span class="mono">(${escapeHtml(e.crane?.code||'')})</span></div>
+    <div class="detail-line"><span class="k">Naslov</span>${escapeHtml(e.title||'—')}</div>
+    <div class="detail-line"><span class="k">Lokacija</span>${escapeHtml(e.site_name||'—')}</div>
+    <div class="detail-line"><span class="k">Začetek</span>${fmtDateTime(e.start_at)}</div>
+    <div class="detail-line"><span class="k">Opombe</span>${escapeHtml(e.notes||'—')}</div>
+    <div class="modal-actions">
+      ${isAdmin() ? `<button class="btn btn-danger" data-action="delete-event" data-id="${e.id}">Izbriši</button>`:''}
+      ${(e.type==='naklad'||e.type==='razklad') ? `<button class="btn btn-primary" data-action="goto-ops">Odpri v Naklad/Razklad</button>`:''}
+      <button class="btn" data-action="modal-close">Zapri</button>
+    </div>
+  `);
+}
+
+function openDivertForm(itemId){
+  openModal(`
+    <h3>Del je šel drugam</h3>
+    <div class="field"><label>Kam je šel ta del?</label><textarea id="dv-note" placeholder="npr. odpeljan direktno na gradbišče Maribor"></textarea></div>
+    <div class="err" id="dv-err"></div>
+    <div class="modal-actions">
+      <button class="btn" data-action="modal-close">Prekliči</button>
+      <button class="btn btn-primary" data-action="save-divert" data-id="${itemId}">Shrani</button>
+    </div>`);
+}
+async function saveDivertForm(itemId){
+  const note = document.getElementById('dv-note').value.trim();
+  if(!note){ document.getElementById('dv-err').textContent='Vnesi opombo.'; return; }
+  await db.divertItem(itemId, note);
+  closeModal();
+  await renderOps();
+}
+
+/* ============================================================
+   NAKLAD / RAZKLAD
+============================================================ */
+let opsCache = [];
+async function renderOps(){
+  const el = document.getElementById('view-ops');
+  opsCache = await db.listOperations();
+  const filtered = opsCache.filter(o => State.opsFilter==='vse' ? true : o.status===State.opsFilter);
+
+  el.innerHTML = `
+    <div class="panel">
+      <div class="row-between">
+        <h2 style="margin:0;">Naklad / Razklad</h2>
+        <div class="subtabs">
+          <button class="${State.opsFilter==='odprto'?'active':''}" data-action="ops-filter" data-f="odprto">Odprto</button>
+          <button class="${State.opsFilter==='zaključeno'?'active':''}" data-action="ops-filter" data-f="zaključeno">Zaključeno</button>
+          <button class="${State.opsFilter==='vse'?'active':''}" data-action="ops-filter" data-f="vse">Vse</button>
+        </div>
+      </div>
+      ${filtered.length===0 ? `<p style="color:var(--text-dim);">Ni operacij.</p>` : filtered.map(renderOpCard).join('')}
+    </div>`;
+}
+function renderOpCard(op){
+  const total = op.items.length;
+  const checked = op.items.filter(i=>i.checked).length;
+  const pct = total ? Math.round(checked/total*100) : 0;
+  const expanded = State.expandedOp === op.id;
+  return `
+    <div class="op-card">
+      <div class="op-head" data-action="toggle-op" data-id="${op.id}">
+        <span class="type-badge ${op.type}">${TYPE_LABEL[op.type]}</span>
+        <span class="crane-name">${escapeHtml(op.crane?.name||'')}</span>
+        <span class="crane-code mono">${escapeHtml(op.crane?.code||'')}</span>
+        <span class="meta">
+          ${op.event?.site_name ? escapeHtml(op.event.site_name)+' · ' : ''}${op.event ? fmtDate(op.event.start_at) : ''}
+          <span class="progress-wrap"><span class="progress-bar" style="width:${pct}%"></span></span>
+          ${checked}/${total}
+          <span class="status-tag ${op.status}">${op.status}</span>
+        </span>
+      </div>
+      ${expanded ? `
+        <div class="op-items">
+          ${op.items.map(it=>`
+            <div class="item-row ${it.diverted?'diverted':''}">
+              <input type="checkbox" ${it.checked?'checked':''} ${it.diverted?'disabled':''} data-action="toggle-item" data-id="${it.id}">
+              <div class="pname">
+                ${escapeHtml(it.part_name)} <span class="qty">× ${it.qty}</span>
+                ${it.source_note ? `<span class="note-badge">⚠ ${escapeHtml(it.source_note)}</span>`:''}
+                ${it.diverted ? `<span class="note-badge">↪ Šlo drugam: ${escapeHtml(it.diverted_note||'')}</span>`:''}
+              </div>
+              ${isAdmin() ? (it.diverted
+                  ? `<button class="btn btn-sm" data-action="undo-divert" data-id="${it.id}">Prekliči</button>`
+                  : `<button class="btn btn-sm" data-action="divert-item" data-id="${it.id}">Šlo drugam</button>`
+                ) : ''}
+            </div>`).join('')}
+        </div>
+        <div class="op-footer">
+          ${isAdmin() && op.status==='odprto' ? `<button class="btn btn-primary" data-action="close-op" data-id="${op.id}">Zaključi</button>`:''}
+          ${isAdmin() && op.status==='zaključeno' ? `<button class="btn" data-action="reopen-op" data-id="${op.id}">Ponovno odpri</button>`:''}
+        </div>
+      ` : ''}
+    </div>`;
+}
+
+/* ============================================================
+   OPOZORILA
+============================================================ */
+async function renderAlerts(){
+  const el = document.getElementById('view-alerts');
+  const alerts = (await db.listAlerts()).filter(a=>!a.resolved);
+  const notes = (await db.listPendingNotes()).filter(n=>!n.resolved);
+  document.getElementById('alerts-count').textContent = alerts.length + notes.length;
+  document.getElementById('alerts-count').classList.toggle('hidden', (alerts.length+notes.length)===0);
+
+  el.innerHTML = `
+    <div class="panel">
+      <h2>⚠ Manjkajoči deli po razkladu</h2>
+      ${alerts.length===0 ? `<p style="color:var(--text-dim);">Ni opozoril.</p>` : alerts.map(a=>`
+        <div class="alert-row al">
+          <div class="msg">${escapeHtml(a.message)}<div class="when">${fmtDateTime(a.created_at)}</div></div>
+          ${isAdmin()?`<button class="btn btn-sm" data-action="resolve-alert" data-id="${a.id}">Rešeno</button>`:''}
+        </div>`).join('')}
+    </div>
+    <div class="panel">
+      <h2>📍 Deli, ki so šli drugam</h2>
+      ${notes.length===0 ? `<p style="color:var(--text-dim);">Ni zapisov.</p>` : notes.map(n=>`
+        <div class="alert-row pn">
+          <div class="msg"><strong>${escapeHtml(n.crane?.name||'')}</strong> — ${escapeHtml(n.part_name)}: ${escapeHtml(n.note)}<div class="when">${fmtDateTime(n.created_at)}</div></div>
+          ${isAdmin()?`<button class="btn btn-sm" data-action="resolve-note" data-id="${n.id}">Rešeno</button>`:''}
+        </div>`).join('')}
+    </div>`;
+}
+
+/* ============================================================
+   UPRAVA (ADMIN)
+============================================================ */
+State.adminSub = 'cranes';
+State.adminCraneOpen = null;
+async function renderAdmin(){
+  if(!isAdmin()) return;
+  const el = document.getElementById('view-admin');
+  const cranes = await db.listCranes();
+  const users = await db.listProfiles();
+
+  el.innerHTML = `
+    <div class="panel">
+      <div class="subtabs">
+        <button class="${State.adminSub==='cranes'?'active':''}" data-action="admin-sub" data-s="cranes">Žerjavi</button>
+        <button class="${State.adminSub==='users'?'active':''}" data-action="admin-sub" data-s="users">Uporabniki</button>
+      </div>
+      <div id="admin-content"></div>
+    </div>`;
+
+  const content = document.getElementById('admin-content');
+  if(State.adminSub==='cranes'){
+    content.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Koda</th><th>Ime</th><th>Model</th><th>Višina m</th><th>Roka m</th><th></th></tr></thead>
+        <tbody>
+          ${cranes.map(c=>`
+            <tr>
+              <td class="mono">${escapeHtml(c.code)}</td>
+              <td>${escapeHtml(c.name)}</td>
+              <td>${escapeHtml(c.model)}</td>
+              <td>${c.height_m??''}</td>
+              <td>${c.jib_m??''}</td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-sm" data-action="edit-crane" data-id="${c.id}">Uredi</button>
+                <button class="btn btn-sm" data-action="crane-list" data-id="${c.id}">Lista</button>
+                <button class="btn btn-sm btn-danger" data-action="delete-crane" data-id="${c.id}">×</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="margin-top:12px;"><button class="btn btn-primary" data-action="new-crane">+ Nov žerjav</button></div>
+      ${State.adminCraneOpen ? await renderPartTemplatesPanel(State.adminCraneOpen) : ''}
+    `;
+  } else {
+    content.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>Ime</th><th>E-poštа</th><th>Vloga</th></tr></thead>
+        <tbody>
+          ${users.map(u=>`
+            <tr>
+              <td>${escapeHtml(u.full_name)}</td>
+              <td>${escapeHtml(u.email)}</td>
+              <td>
+                <select data-action="role-select" data-id="${u.id}">
+                  <option value="viewer" ${u.role==='viewer'?'selected':''}>Ekipa</option>
+                  <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
+                </select>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <p style="color:var(--text-dim);font-size:12px;margin-top:10px;">Nove uporabnike povabiš v Supabase Dashboard → Authentication → Invite user.</p>
+    `;
+  }
+}
+async function renderPartTemplatesPanel(craneId){
+  const crane = State.cranes.find(c=>c.id===craneId);
+  const items = await db.listPartTemplates(craneId);
+  return `
+    <div class="panel" style="margin-top:14px;background:var(--panel);">
+      <h2>Nakladalna lista — ${escapeHtml(crane?.name||'')}</h2>
+      <table class="admin-table">
+        <thead><tr><th>#</th><th>Del</th><th>Kol.</th><th>Opomba</th><th></th></tr></thead>
+        <tbody>
+          ${items.map(it=>`
+            <tr>
+              <td>${it.sort_order}</td>
+              <td>${escapeHtml(it.part_name)}</td>
+              <td>${it.qty}</td>
+              <td>${escapeHtml(it.notes||'')}</td>
+              <td><button class="btn btn-sm btn-danger" data-action="delete-part-template" data-id="${it.id}" data-crane="${craneId}">×</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <input id="pt-name" placeholder="Ime dela" style="flex:2;padding:7px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <input id="pt-qty" type="number" value="1" min="1" style="width:70px;padding:7px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <input id="pt-order" type="number" value="${items.length+1}" style="width:70px;padding:7px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <input id="pt-notes" placeholder="Opomba" style="flex:2;padding:7px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;color:var(--text);">
+        <button class="btn btn-primary" data-action="add-part-template" data-crane="${craneId}">+ Dodaj</button>
+      </div>
+    </div>`;
+}
+function openCraneForm(id){
+  const c = id ? State.cranes.find(x=>x.id===id) : {code:'',name:'',model:'',height_m:'',jib_m:'',notes:''};
+  openModal(`
+    <h3>${id?'Uredi žerjav':'Nov žerjav'}</h3>
+    <div class="field"><label>Šifra / koda</label><input id="c-code" value="${escapeHtml(c.code)}"></div>
+    <div class="field"><label>Ime</label><input id="c-name" value="${escapeHtml(c.name)}"></div>
+    <div class="field"><label>Model (TRX/CTT …)</label><input id="c-model" value="${escapeHtml(c.model)}"></div>
+    <div class="field"><label>Višina (m)</label><input id="c-height" type="number" value="${c.height_m??''}"></div>
+    <div class="field"><label>Roka (m)</label><input id="c-jib" type="number" value="${c.jib_m??''}"></div>
+    <div class="field"><label>Opombe</label><textarea id="c-notes">${escapeHtml(c.notes||'')}</textarea></div>
+    <div class="err" id="c-err"></div>
+    <div class="modal-actions">
+      <button class="btn" data-action="modal-close">Prekliči</button>
+      <button class="btn btn-primary" data-action="save-crane" data-id="${id||''}">Shrani</button>
+    </div>`);
+}
+async function saveCraneForm(id){
+  const code = document.getElementById('c-code').value.trim();
+  const name = document.getElementById('c-name').value.trim();
+  const model = document.getElementById('c-model').value.trim();
+  const height_m = parseFloat(document.getElementById('c-height').value) || null;
+  const jib_m = parseFloat(document.getElementById('c-jib').value) || null;
+  const notes = document.getElementById('c-notes').value.trim();
+  if(!code || !name || !model){ document.getElementById('c-err').textContent='Šifra, ime in model so obvezni.'; return; }
+  try{
+    await db.upsertCrane({id: id||undefined, code, name, model, height_m, jib_m, notes});
+    closeModal();
+    State.cranes = await db.listCranes();
+    await renderAdmin();
+  }catch(e){ document.getElementById('c-err').textContent = e.message; }
+}
+
+/* ============================================================
+   RENDER + DOGODKI (event delegation)
+============================================================ */
+async function render(){
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===State.tab));
+  document.getElementById('view-calendar').classList.toggle('hidden', State.tab!=='calendar');
+  document.getElementById('view-ops').classList.toggle('hidden', State.tab!=='ops');
+  document.getElementById('view-alerts').classList.toggle('hidden', State.tab!=='alerts');
+  document.getElementById('view-admin').classList.toggle('hidden', State.tab!=='admin');
+
+  if(State.tab==='calendar') await renderCalendar();
+  if(State.tab==='ops') await renderOps();
+  if(State.tab==='alerts') await renderAlerts();
+  if(State.tab==='admin') await renderAdmin();
+  await refreshAlertBadge();
+}
+async function refreshAlertBadge(){
+  const alerts = (await db.listAlerts()).filter(a=>!a.resolved);
+  const notes = (await db.listPendingNotes()).filter(n=>!n.resolved);
+  const n = alerts.length + notes.length;
+  const badge = document.getElementById('alerts-count');
+  badge.textContent = n;
+  badge.classList.toggle('hidden', n===0);
+}
+
+document.addEventListener('click', async (ev)=>{
+  const t = ev.target.closest('[data-action]');
+  if(!t) return;
+  const action = t.dataset.action;
+
+  if(action==='modal-backdrop' && ev.target===t) return closeModal();
+  if(action==='modal-close') return closeModal();
+
+  switch(action){
+    case 'new-event': return openEventForm();
+    case 'day-click': return openEventForm(t.dataset.date);
+    case 'event-click': { ev.stopPropagation(); return openEventDetail(t.dataset.id); }
+    case 'save-event': return saveEventForm();
+    case 'delete-event': await db.deleteEvent(t.dataset.id); closeModal(); return render();
+    case 'goto-ops': closeModal(); State.tab='ops'; return render();
+    case 'month-prev': State.calMonth = new Date(State.calMonth.getFullYear(), State.calMonth.getMonth()-1, 1); return renderCalendar();
+    case 'month-next': State.calMonth = new Date(State.calMonth.getFullYear(), State.calMonth.getMonth()+1, 1); return renderCalendar();
+    case 'month-today': State.calMonth = new Date(); return renderCalendar();
+
+    case 'ops-filter': State.opsFilter = t.dataset.f; return renderOps();
+    case 'toggle-op': State.expandedOp = (State.expandedOp===t.dataset.id) ? null : t.dataset.id; return renderOps();
+    case 'toggle-item': { ev.stopPropagation(); await db.toggleItem(t.dataset.id, t.checked); return renderOps(); }
+    case 'divert-item': { ev.stopPropagation(); return openDivertForm(t.dataset.id); }
+    case 'save-divert': return saveDivertForm(t.dataset.id);
+    case 'undo-divert': { ev.stopPropagation(); await db.undoDivertItem(t.dataset.id); return renderOps(); }
+    case 'close-op': {
+      ev.stopPropagation();
+      if(!confirm('Zaključi to operacijo? Neobkljukani deli bodo sprožili opozorilo.')) return;
+      await db.closeOperation(t.dataset.id);
+      await renderOps(); return refreshAlertBadge();
+    }
+    case 'reopen-op': { ev.stopPropagation(); await db.reopenOperation(t.dataset.id); return renderOps(); }
+
+    case 'resolve-alert': await db.resolveAlert(t.dataset.id); return renderAlerts();
+    case 'resolve-note': await db.resolvePendingNote(t.dataset.id); return renderAlerts();
+
+    case 'admin-sub': State.adminSub = t.dataset.s; return renderAdmin();
+    case 'new-crane': return openCraneForm(null);
+    case 'edit-crane': return openCraneForm(t.dataset.id);
+    case 'save-crane': return saveCraneForm(t.dataset.id || null);
+    case 'delete-crane': if(confirm('Izbriši žerjav?')){ await db.deleteCrane(t.dataset.id); State.cranes=await db.listCranes(); await renderAdmin(); } return;
+    case 'crane-list': State.adminCraneOpen = (State.adminCraneOpen===t.dataset.id) ? null : t.dataset.id; return renderAdmin();
+    case 'delete-part-template': await db.deletePartTemplate(t.dataset.id); return renderAdmin();
+    case 'add-part-template': {
+      const craneId = t.dataset.crane;
+      const part_name = document.getElementById('pt-name').value.trim();
+      const qty = parseInt(document.getElementById('pt-qty').value) || 1;
+      const sort_order = parseInt(document.getElementById('pt-order').value) || 0;
+      const notes = document.getElementById('pt-notes').value.trim();
+      if(!part_name) return;
+      await db.upsertPartTemplate({crane_id:craneId, part_name, qty, sort_order, notes});
+      return renderAdmin();
+    }
+  }
+});
+document.addEventListener('change', async (ev)=>{
+  const t = ev.target.closest('[data-action="role-select"]');
+  if(t){ await db.updateProfileRole(t.dataset.id, t.value); return renderAdmin(); }
+});
+
+document.querySelectorAll('nav.tabs button[data-tab]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{ State.tab = btn.dataset.tab; render(); });
+});
+document.getElementById('login-btn').addEventListener('click', doLogin);
+document.getElementById('login-password').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+document.getElementById('logout-btn').addEventListener('click', doLogout);
+
+db.auth.onChange(()=>{});
+db.onRealtime?.(()=>{ render(); });
+bootSession();
+</script>
+</body>
+</html>

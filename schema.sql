@@ -334,23 +334,23 @@ end;
 $$ language plpgsql security definer;
 
 -- Pokliči ob vsakem zagonu aplikacije (katerikoli prijavljen uporabnik): če je opravilo/servis
--- odprto že več kot 3 dni in ima neobkljukane naloge, sproži (enkratno) opozorilo.
+-- odprto še naslednji dan (>1 dan) in ima neobkljukane naloge, sproži (enkratno) opozorilo.
 create or replace function check_stale_operations() returns void as $$
 begin
   insert into alerts (operation_id, operation_item_id, message)
   select o.id, null,
-    '⏰ Čaka že več kot 3 dni — ' || upper(o.type) || ': ' || coalesce(ce.title, ce.site_name, '(brez naslova)')
+    '⏰ Čaka že več kot 1 dan — ' || upper(o.type) || ': ' || coalesce(ce.title, ce.site_name, '(brez naslova)')
   from operations o
   join calendar_events ce on ce.id = o.calendar_event_id
   where o.type in ('opravilo','servis')
     and o.status = 'odprto'
     and o.stale_alerted = false
-    and o.created_at < now() - interval '3 days'
+    and o.created_at < now() - interval '1 day'
     and exists (select 1 from operation_items oi where oi.operation_id = o.id and oi.checked = false);
 
   update operations set stale_alerted = true
     where type in ('opravilo','servis') and status = 'odprto' and stale_alerted = false
-      and created_at < now() - interval '3 days'
+      and created_at < now() - interval '1 day'
       and exists (select 1 from operation_items oi where oi.operation_id = operations.id and oi.checked = false);
 end;
 $$ language plpgsql security definer;

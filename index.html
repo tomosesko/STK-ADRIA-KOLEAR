@@ -228,7 +228,7 @@ function makeDemoStore(){
   const d1 = new Date(now.getFullYear(), now.getMonth(), now.getDate()+2, 7, 0);
   const d2 = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 9, 0);
   const d3 = new Date(now.getFullYear(), now.getMonth(), now.getDate()+5, 8, 0);
-  const stale = new Date(now.getTime() - 4*24*3600*1000); // pred 4 dnevi, za prikaz "čaka > 3 dni"
+  const stale = new Date(now.getTime() - 2*24*3600*1000); // pred 2 dnevoma, za prikaz "čaka > 1 dan"
   const calendar_events = [
     {id:'e1', crane_id:'c1', type:'naklad', title:'Naklad Gašper', site_name:'Gradbišče Koper — Istrska', start_at:d1.toISOString(), end_at:null, notes:'', urgent:false, created_by:'u-admin'},
     {id:'e2', crane_id:'c3', type:'servis', title:'Servis hidravlike', site_name:'Gradbišče Celje', start_at:d2.toISOString(), end_at:null, notes:'Puščanje na vrtljivem delu', urgent:true, created_by:'u-admin'},
@@ -351,13 +351,13 @@ function buildDemoDb(){
     async deleteTaskItem(itemId){ store.operation_items = store.operation_items.filter(i=>i.id!==itemId); notify(); },
     async getOperationByEventId(eventId){ return store.operations.find(o=>o.calendar_event_id===eventId) || null; },
     async checkStaleOperations(){
-      const cutoff = Date.now() - 3*24*3600*1000;
+      const cutoff = Date.now() - 1*24*3600*1000;
       store.operations.forEach(o=>{
         if(['opravilo','servis'].includes(o.type) && o.status==='odprto' && !o.stale_alerted && new Date(o.created_at).getTime() < cutoff){
           const hasUnchecked = store.operation_items.some(i=>i.operation_id===o.id && !i.checked);
           if(hasUnchecked){
             const ev = store.calendar_events.find(e=>e.id===o.calendar_event_id);
-            store.alerts.push({id:uid(), operation_id:o.id, operation_item_id:null, message:`⏰ Čaka že več kot 3 dni — ${o.type.toUpperCase()}: ${ev?.title||ev?.site_name||'(brez naslova)'}`, created_at:new Date().toISOString(), resolved:false});
+            store.alerts.push({id:uid(), operation_id:o.id, operation_item_id:null, message:`⏰ Čaka že več kot 1 dan — ${o.type.toUpperCase()}: ${ev?.title||ev?.site_name||'(brez naslova)'}`, created_at:new Date().toISOString(), resolved:false});
             o.stale_alerted = true;
           }
         }
@@ -768,7 +768,7 @@ async function renderAlerts(){
   el.innerHTML = `
     <div class="panel">
       <h2>⚠ Opozorila</h2>
-      <p style="color:var(--text-dim);font-size:12px;margin-top:-6px;">Manjkajoči deli po razkladu, nujni vnosi in opravila/servisi, ki čakajo več kot 3 dni.</p>
+      <p style="color:var(--text-dim);font-size:12px;margin-top:-6px;">Manjkajoči deli po razkladu, nujni vnosi in opravila/servisi, ki čakajo več kot 1 dan.</p>
       ${alerts.length===0 ? `<p style="color:var(--text-dim);">Ni opozoril.</p>` : alerts.map(a=>`
         <div class="alert-row al">
           <div class="msg">${escapeHtml(a.message)}<div class="when">${fmtDateTime(a.created_at)}</div></div>
@@ -978,7 +978,7 @@ document.addEventListener('click', async (ev)=>{
     case 'close-op': {
       ev.stopPropagation();
       const kind=t.dataset.kind;
-      if(!confirm('Zaključi? Neobkljukane postavke bodo (pri razkladu takoj, pri opravilih/servisih po 3 dneh) sprožile opozorilo.')) return;
+      if(!confirm('Zaključi? Neobkljukane postavke bodo (pri razkladu takoj, pri opravilih/servisih naslednji dan) sprožile opozorilo.')) return;
       await db.closeOperation(t.dataset.id);
       await KIND_CONFIG[kind].render(); return refreshAlertBadge();
     }

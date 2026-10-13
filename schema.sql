@@ -28,10 +28,13 @@ create table cranes (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,          -- šifra, npr. "CTT95-GASPER"
   name text not null,                 -- ime, npr. "Gašper"
-  model text not null,                -- npr. "TRX CTT 95" (prikazno ime, neodvisno od kataloga)
-  crane_model_id uuid references crane_models(id),
-  height_m numeric,
-  jib_m numeric,
+  model text not null,                -- npr. "CTT 91" (kratko, kot ga ekipa piše na tablo)
+  crane_model_id uuid references crane_models(id),  -- povezava na uradni katalog, ko je znana
+  serial_number text,                 -- S/N s table/nalepke
+  height_m numeric,                   -- HUH
+  jib_m numeric,                      -- JIB
+  base_type text,                     -- npr. "ANCHORS", "C45", "CROSS BASE C50 PEINER"
+  yard_only boolean not null default false,  -- žerjav na skladišču, se ne oddaja v najem
   notes text,
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -59,7 +62,7 @@ create table calendar_events (
   urgent boolean not null default false,
   created_by uuid references profiles(id),
   created_at timestamptz not null default now(),
-  constraint crane_required_unless_opravilo check (type = 'opravilo' or crane_id is not null)
+  constraint crane_required_unless_opravilo check (type in ('opravilo','drugo') or crane_id is not null)
 );
 
 create table operations (
@@ -450,6 +453,50 @@ insert into crane_models (name, pdf_url) values
 ('Terex CSE 32', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cse-32.pdf'),
 ('Terex CSE 36', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cse-36.pdf'),
 ('Terex CSE 40', 'https://stk-adria.com/wp-content/uploads/2024/12/Terex-cse-40.pdf');
+
+-- ============================================================
+-- 11. ŽERJAVI (cranes) — s table na skladišču, prebrano s slike 13. 10. 2026,
+-- potrjeno z uporabnikom v pogovoru. Samo teh 33 je v floti (dodatnih 5 modelov v
+-- katalogu je na voljo prek nizozemskega dobavitelja, niso naša last).
+-- model = kratko ime, kot ga ekipa piše na tablo (ni nujno isto kot ime v crane_models).
+-- crane_model_id NAMENOMA ni povezan — nekateri modeli na tabli (npr. "CTT 162") se ne
+-- ujemajo nedvoumno z nobenim od 28 PDF katalogov; poveži ročno, ko bo jasno.
+-- ============================================================
+
+insert into cranes (code, name, model, serial_number, jib_m, height_m, base_type, yard_only, notes) values
+('CTT132-JANEZ', 'Janez', 'CTT 132', 'G12020021', 60, 30, 'CROSS BASE', false, null),
+('CSE32-SIME', 'Šime', 'CSE 32', 'G12722013', 32, 21, 'ANCHORS', false, null),
+('CTT472-MIKE', 'Mike', 'CTT 472', 'G12320006', 75, 62.4, 'ANCHORS', false, null),
+('CTT91-GASPER', 'Gašper', 'CTT 91', 'G8407124', 50, 29.05, 'CROSS BASE C38', false, null),
+('CBR32-LADKO', 'Ladko', 'CBR 32', 'G9512001', 32, 21, 'ANCHORS', false, null),
+('CTT91-LUBO', 'Lubo', 'CTT 91', 'G8405103', 25, 25, 'ANCHORS', false, null),
+('CTT91-ZOKI', 'Zoki', 'CTT 91', 'G8406010', 50, 34.95, 'C38', false, null),
+('CTT132-MIMI', 'Mimi', 'CTT 132', 'G13724002', 50, 29, 'C45', false, null),
+('CTT231-PRINCMUFTI', 'Princ Mufti', 'CTT 231', 'G9813012', 50, 56.30, 'C60', false, null),
+('CTT161-MARCOPOLO', 'Marco Polo', 'CTT 161', 'G7610012', 60, 44.70, 'C45', false, null),
+('CSE32-CASPER', 'Casper', 'CSE 32', 'G12721017', 32, 21.5, 'ANCHORS', false, null),
+('CTT182-ALPHONSE', 'Monsieur Alphonse', 'CTT 182', 'G11618004', 40, 38.80, 'C45', false, null),
+('CTT91-DONALD', 'Donald', 'CTT 91', 'G8420010', 50, 39.85, 'ANCHORS / C58', false, null),
+('CTT91-SUSHI', 'Sushi', 'CTT 91', 'G8407093', 40, 34, 'SIDRA TS12', false, null),
+('CTT231-PRINCESSLEIA', 'Princess Leia', 'CTT 231', 'G9813004', 70, 56.30, 'TS25', false, null),
+('CTT181-LIONKING', 'Lion King', 'CTT 181', 'G8107024', 60, 32.9, 'BASE', false, null),
+('CTT182-CALIMERO', 'Calimero', 'CTT 182', 'G11617017', 55, 25, 'C45', false, null),
+('CTT231-JAMESBOND', 'James Bond', 'CTT 231', 'G9812007', 70, 56.30, 'C60', false, null),
+('CTT182-RAMBO', 'Rambo', 'CTT 182', 'G11617003', 60, 38.8, 'C45', false, null),
+('CTT162-LADYDIANA', 'Lady Diana', 'CTT 162', 'G11716012', 55, 27, 'C45', false, null),
+('CTT231-RUDA', 'Ruda', 'CTT 231', 'G9813008', 65, 45, 'C60', false, null),
+('CTT162-IVETTE', 'Ivette', 'CTT 162', 'G11717003', 40, 43, 'ANCHORS', false, null),
+('CTT152-CAFFEREN', 'Caffe Ren', 'CTT 152', 'G14124006', 50, 45, 'C38', false, 'Na tabli ročno pripisana druga vrednost višine: 44,5 m — preveri, katera drži.'),
+('CTT181-TOMJONES', 'Tom Jones', 'CTT 181', 'G8107115', 60, 38.8, 'C45', false, null),
+('CTT231-TITO', 'Tito', 'CTT 231', 'G9813009', 65, 44.5, 'C60', false, null),
+('CTT332-KINGCHARLES', 'King Charles', 'CTT 332', 'G12921003', 35, 20, 'ANCHORS', false, null),
+('CTT181-MYSHARONA', 'My Sharona', 'CTT 181', 'G8111006', 60, 38.8, 'CROSS BASE C50 PEINER', false, null),
+('CTT162-CICIMICI', 'Cicimici', 'CTT 162', 'G11716016', 60, 44, 'CROSS BASE C45', false, null),
+('CTT231-MRNICE', 'Mr. Nice', 'CTT 231', 'G9812008', null, 0, null, true, 'JIB: NO.1, CAB. Na tabli ročno označeno "YARD CRANE".'),
+('CTT231-10-YARDI', 'Yardi', 'CTT 231-10', 'G9808015', 50, 20, 'C60', true, 'Žerjav za nakladanje/razkladanje drugih žerjavov na skladišču — se ne oddaja v najem.'),
+('CSE32-MERCURY', 'Mercury', 'CSE 32', 'G12721018', 32, 21.5, 'ANCHORS', false, null),
+('CSE32-COPERNICUS', 'Copernicus', 'CSE 32', 'G12721014', 32, 21.5, 'ANCHORS', false, null),
+('CTT161-SNOOPY', 'Snoopy', 'CTT 161', 'G7602018', null, 0, null, false, 'JIB: NO.1, CAB. Podnožje/sidra neznano.');
 
 -- ============================================================
 -- Konec. Po tem:

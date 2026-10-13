@@ -454,9 +454,13 @@ insert into crane_models (name, pdf_url) values
 -- ============================================================
 -- Konec. Po tem:
 -- 1) Authentication -> Users -> Invite user, za vsakega člana ekipe (email).
+--    Trije admini: megi.podbregar@gmail.com (Marjetka), gerryosome@gmail.com (Vladimir),
+--    sesko.tomi1@gmail.com (Robert).
 -- 2) Za tri admine poženi (po njihovi prvi prijavi, da obstaja vrstica v profiles):
---    update profiles set role = 'admin' where email in ('...','...','...');
+--    update profiles set role = 'admin' where email in
+--      ('megi.podbregar@gmail.com', 'gerryosome@gmail.com', 'sesko.tomi1@gmail.com');
 -- 3) Vstavi 38 žerjavov v tabelo cranes (poveži crane_model_id na pravi crane_models
 --    zapis) in njihove nakladalne liste v part_templates (lahko ročno v Table editor,
---    ali mi pošlji seznam in pripravim INSERT stavke).
+--    ali mi pošlji seznam in pripravim INSERT stavke — čaka na potrditev prebranega
+--    seznama s table, glej pogovor).
 -- ============================================================

@@ -22,8 +22,13 @@ button{font-family:inherit;cursor:pointer;}
 .hidden{display:none !important;}
 
 /* ---------- login ---------- */
-#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-.login-box{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;}
+#login-screen{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:
+    linear-gradient(180deg, rgba(10,13,16,.55) 0%, rgba(10,13,16,.72) 55%, rgba(10,13,16,.88) 100%),
+    url('login-bg.jpg') center 30%/cover no-repeat;
+}
+.login-box{width:100%;max-width:360px;background:rgba(27,32,38,.88);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:var(--radius);padding:28px;box-shadow:0 12px 40px rgba(0,0,0,.45);}
 .login-box h1{font-size:20px;margin:0 0 4px;}
 .login-box p.sub{color:var(--text-dim);font-size:13px;margin:0 0 20px;}
 .field{margin-bottom:14px;}

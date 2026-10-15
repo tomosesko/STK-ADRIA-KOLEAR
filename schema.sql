@@ -486,7 +486,7 @@ insert into cranes (code, name, model, serial_number, jib_m, height_m, base_type
 ('CTT162-LADYDIANA', 'Lady Diana', 'CTT 162', 'G11716012', 55, 27, 'C45', false, null),
 ('CTT231-RUDA', 'Ruda', 'CTT 231', 'G9813008', 65, 45, 'C60', false, null),
 ('CTT162-IVETTE', 'Ivette', 'CTT 162', 'G11717003', 40, 43, 'ANCHORS', false, null),
-('CTT152-CAFFEREN', 'Caffe Ren', 'CTT 152', 'G14124006', 50, 45, 'C38', false, 'Na tabli ročno pripisana druga vrednost višine: 44,5 m — preveri, katera drži.'),
+('CTT152-CAFFEREN', 'Caffe Ren', 'CTT 152', 'G14124006', 50, 44.5, 'C38', false, 'Potrjeno s katalogom: 44,5 m je pravilna višina (ne 45, kot je prvotno pisalo na tabli).'),
 ('CTT181-TOMJONES', 'Tom Jones', 'CTT 181', 'G8107115', 60, 38.8, 'C45', false, null),
 ('CTT231-TITO', 'Tito', 'CTT 231', 'G9813009', 65, 44.5, 'C60', false, null),
 ('CTT332-KINGCHARLES', 'King Charles', 'CTT 332', 'G12921003', 35, 20, 'ANCHORS', false, null),
@@ -501,13 +501,17 @@ insert into cranes (code, name, model, serial_number, jib_m, height_m, base_type
 -- ============================================================
 -- Konec. Po tem:
 -- 1) Authentication -> Users -> Invite user, za vsakega člana ekipe (email).
---    Trije admini: megi.podbregar@gmail.com (Marjetka), gerryosome@gmail.com (Vladimir),
---    sesko.tomi1@gmail.com (Robert).
--- 2) Za tri admine poženi (po njihovi prvi prijavi, da obstaja vrstica v profiles):
+--    Štirje admini: megi.podbregar@gmail.com (Marjetka Podbregar), gerryosome@gmail.com
+--    (Vladimir Podbregar), sesko.tomi1@gmail.com (Tomi Sesko), rtrauner007@gmail.com
+--    (Robert Trauner). Vsi ostali povabljeni (delavci) ostanejo privzeto 'viewer'.
+-- 2) Za štiri admine poženi (po njihovi prvi prijavi, da obstaja vrstica v profiles):
 --    update profiles set role = 'admin' where email in
---      ('megi.podbregar@gmail.com', 'gerryosome@gmail.com', 'sesko.tomi1@gmail.com');
--- 3) Vstavi 38 žerjavov v tabelo cranes (poveži crane_model_id na pravi crane_models
---    zapis) in njihove nakladalne liste v part_templates (lahko ročno v Table editor,
---    ali mi pošlji seznam in pripravim INSERT stavke — čaka na potrditev prebranega
---    seznama s table, glej pogovor).
+--      ('megi.podbregar@gmail.com', 'gerryosome@gmail.com', 'sesko.tomi1@gmail.com',
+--       'rtrauner007@gmail.com');
+-- 3) Vseh 33 žerjavov (ki gredo v naklad/razklad) je že v tabeli cranes (glej zgoraj) —
+--    "Yardi" (dvoriščni, se ne oddaja v najem) namenoma nima nakladalne liste.
+--    Nakladalne liste za vse so v ločeni datoteki part_templates.sql — zaženi jo po tej
+--    datoteki. To so DEFAULT sestave iz Terex katalogov; nekatere imajo opombo "preveri"
+--    (nestandardne višine, nejasne oznake na tabli) — admin jih prilagodi po potrebi v
+--    Uprava → Žerjavi → Lista.
 -- ============================================================

@@ -118,9 +118,9 @@ create table alerts (
 
 create or replace function is_admin() returns boolean as $$
   select exists(
-    select 1 from profiles where id = auth.uid() and role = 'admin'
+    select 1 from public.profiles where id = auth.uid() and role = 'admin'
   );
-$$ language sql security definer stable;
+$$ language sql security definer stable set search_path = public;
 
 -- ============================================================
 -- 3. SAMODEJNO: nov uporabnik (povabilo) -> vrstica v profiles
@@ -128,11 +128,11 @@ $$ language sql security definer stable;
 
 create or replace function handle_new_user() returns trigger as $$
 begin
-  insert into profiles (id, email, full_name)
+  insert into public.profiles (id, email, full_name)
     values (new.id, new.email, coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)));
   return new;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create trigger trg_new_user
 after insert on auth.users
@@ -198,7 +198,7 @@ begin
 
   return NEW;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create trigger trg_new_calendar_event
 after insert on calendar_events
@@ -217,7 +217,7 @@ begin
   end if;
   return NEW;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create trigger trg_item_diverted
 after update on operation_items
@@ -237,7 +237,7 @@ begin
   end if;
   return NEW;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create trigger trg_operation_closed
 after update on operations
@@ -253,7 +253,7 @@ create or replace function toggle_item_checked(item_id uuid, is_checked boolean)
         checked_by = case when is_checked then auth.uid() else null end,
         checked_at = case when is_checked then now() else null end
     where id = item_id;
-$$ language sql security definer;
+$$ language sql security definer set search_path = public;
 
 create or replace function divert_item(item_id uuid, note text) returns void as $$
 begin
@@ -264,7 +264,7 @@ begin
     set diverted = true, diverted_note = note, checked = false, checked_by = null, checked_at = null
     where id = item_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create or replace function undo_divert_item(item_id uuid) returns void as $$
 begin
@@ -273,7 +273,7 @@ begin
   end if;
   update operation_items set diverted = false, diverted_note = null where id = item_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create or replace function close_operation(op_id uuid) returns void as $$
 begin
@@ -282,7 +282,7 @@ begin
   end if;
   update operations set status = 'zaključeno', closed_at = now() where id = op_id and status = 'odprto';
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create or replace function reopen_operation(op_id uuid) returns void as $$
 begin
@@ -291,7 +291,7 @@ begin
   end if;
   update operations set status = 'odprto', closed_at = null where id = op_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create or replace function resolve_pending_note(note_id uuid) returns void as $$
 begin
@@ -300,7 +300,7 @@ begin
   end if;
   update pending_notes set resolved = true, resolved_at = now() where id = note_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create or replace function resolve_alert(alert_id uuid) returns void as $$
 begin
@@ -309,7 +309,7 @@ begin
   end if;
   update alerts set resolved = true, resolved_at = now(), resolved_by = auth.uid() where id = alert_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- Doda nalogo na opravilo/servis (admin jih vnese ob ustvarjanju dogodka ali kasneje).
 create or replace function add_task_item(op_id uuid, task_name text) returns uuid as $$
@@ -325,7 +325,7 @@ begin
     values (op_id, task_name, 1, next_order) returning id into new_id;
   return new_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create or replace function delete_task_item(item_id uuid) returns void as $$
 begin
@@ -334,7 +334,7 @@ begin
   end if;
   delete from operation_items where id = item_id;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- Pokliči ob vsakem zagonu aplikacije (katerikoli prijavljen uporabnik): če je opravilo/servis
 -- odprto še naslednji dan (>1 dan) in ima neobkljukane naloge, sproži (enkratno) opozorilo.
@@ -356,7 +356,7 @@ begin
       and created_at < now() - interval '1 day'
       and exists (select 1 from operation_items oi where oi.operation_id = operations.id and oi.checked = false);
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 -- ============================================================
 -- 8. ROW LEVEL SECURITY

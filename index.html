@@ -1245,6 +1245,17 @@ async function init(){
 
 db.auth.onChange(()=>{});
 db.onRealtime?.(()=>{ render(); });
+
+/* Varnostna mreža: na telefonu se realtime povezava ob zaklepu/
+   zamenjavi omrežja včasih tiho prekine. Ko se app spet prikaže,
+   dobi fokus ali se poveže na splet, osvežimo podatke sami. */
+function refreshIfLoggedIn(){
+  if(document.getElementById('app').classList.contains('show')) render();
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') refreshIfLoggedIn(); });
+window.addEventListener('focus', refreshIfLoggedIn);
+window.addEventListener('online', refreshIfLoggedIn);
+
 init();
 </script>
 </body>

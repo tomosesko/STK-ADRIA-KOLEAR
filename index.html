@@ -22,7 +22,7 @@ button{font-family:inherit;cursor:pointer;}
 .hidden{display:none !important;}
 
 /* ---------- login ---------- */
-#login-screen{
+#login-screen,#setpw-screen{
   min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
   background:
     linear-gradient(180deg, rgba(10,13,16,.55) 0%, rgba(10,13,16,.72) 55%, rgba(10,13,16,.88) 100%),
@@ -172,6 +172,23 @@ table.admin-table input,table.admin-table select{width:100%;padding:5px 7px;back
   </div>
 </div>
 
+<div id="setpw-screen" class="hidden">
+  <div class="login-box">
+    <h1>Dobrodošel</h1>
+    <p class="sub">To je tvoja prva prijava — nastavi si geslo</p>
+    <div class="field">
+      <label>Novo geslo (vsaj 6 znakov)</label>
+      <input type="password" id="setpw-password" autocomplete="new-password">
+    </div>
+    <div class="field">
+      <label>Ponovi geslo</label>
+      <input type="password" id="setpw-password2" autocomplete="new-password">
+    </div>
+    <button class="btn btn-primary btn-full" id="setpw-btn">Shrani geslo in nadaljuj</button>
+    <div class="err" id="setpw-err"></div>
+  </div>
+</div>
+
 <div id="app">
   <header class="topbar">
     <div class="brand">STK Adria <span class="tag">KOLEDAR</span></div>
@@ -312,6 +329,7 @@ function buildDemoDb(){
         return currentUser;
       },
       async signOut(){ currentUser = null; },
+      async setPassword(_newPassword){ /* no-op v demo načinu */ },
       onChange(){ /* no-op v demo načinu */ }
     },
     onRealtime(fn){ listeners.push(fn); },
@@ -450,6 +468,7 @@ function buildSupabaseDb(){
       async getSession(){ const {data} = await sb.auth.getSession(); return data.session; },
       async signIn(email,password){ const r = await sb.auth.signInWithPassword({email,password}); if(r.error) throw r.error; return r.data.user; },
       async signOut(){ await sb.auth.signOut(); },
+      async setPassword(newPassword){ const r = await sb.auth.updateUser({password:newPassword}); if(r.error) throw r.error; },
       onChange(fn){ sb.auth.onAuthStateChange((_e,session)=>fn(session)); }
     },
     onRealtime(fn){
@@ -1174,9 +1193,48 @@ document.getElementById('login-btn').addEventListener('click', doLogin);
 document.getElementById('login-password').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 document.getElementById('logout-btn').addEventListener('click', doLogout);
 
+/* ============================================================
+   POVABILO / PONASTAVITEV GESLA — Supabase po kliku na povezavo v
+   e-mailu odpre stran z #type=invite ali #type=recovery v naslovu
+   in žetonom, ki ga klient samodejno prebere v sejo. Tu to zaznamo
+   in namesto navadne prijave pokažemo zaslon "nastavi geslo".
+============================================================ */
+const authFlowType = new URLSearchParams(window.location.hash.slice(1)).get('type');
+
+function showSetPasswordScreen(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('setpw-screen').classList.remove('hidden');
+  document.getElementById('setpw-screen').style.display = 'flex';
+}
+async function doSetPassword(){
+  const p1 = document.getElementById('setpw-password').value;
+  const p2 = document.getElementById('setpw-password2').value;
+  const errEl = document.getElementById('setpw-err');
+  errEl.textContent = '';
+  if(p1.length < 6){ errEl.textContent = 'Geslo naj ima vsaj 6 znakov.'; return; }
+  if(p1 !== p2){ errEl.textContent = 'Gesli se ne ujemata.'; return; }
+  try{
+    await db.auth.setPassword(p1);
+    history.replaceState(null, '', window.location.pathname);
+    document.getElementById('setpw-screen').style.display = 'none';
+    await bootSession();
+  }catch(e){ errEl.textContent = e.message || 'Napaka pri shranjevanju gesla.'; }
+}
+document.getElementById('setpw-btn').addEventListener('click', doSetPassword);
+document.getElementById('setpw-password2').addEventListener('keydown', e=>{ if(e.key==='Enter') doSetPassword(); });
+
+async function init(){
+  if(authFlowType === 'invite' || authFlowType === 'recovery'){
+    const session = await db.auth.getSession();
+    if(session){ showSetPasswordScreen(); return; }
+  }
+  bootSession();
+}
+
 db.auth.onChange(()=>{});
 db.onRealtime?.(()=>{ render(); });
-bootSession();
+init();
 </script>
 </body>
 </html>
